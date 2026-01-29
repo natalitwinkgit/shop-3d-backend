@@ -1,4 +1,4 @@
-// server/index.js
+// server/index.js  ✅ UPDATED FULL CODE (+ /api/inventory routes)
 import express from "express";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
@@ -32,12 +32,18 @@ import userRoutes from "./routes/userRoutes.js";
 import heartbeatRoutes from "./routes/heartbeatRoutes.js";
 import i18nMissingRoutes from "./routes/i18nMissingRoutes.js";
 
+// ✅ NEW: inventory routes (stock by locations)
+import inventoryRoutes from "./routes/inventoryRoutes.js";
+
+// ✅ model for saving socket messages
+import Message from "./models/Message.js";
+
 // ESM __dirname
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-app.set("trust proxy", 1); // важливо для Railway/Render/Reverse proxy
+app.set("trust proxy", 1);
 
 const server = http.createServer(app);
 
@@ -51,7 +57,7 @@ app.use(
 );
 
 // -----------------------
-// CORS (robust)
+// CORS
 // -----------------------
 const allowedOrigins = String(process.env.CLIENT_URL || "http://localhost:5173")
   .split(",")
@@ -60,17 +66,14 @@ const allowedOrigins = String(process.env.CLIENT_URL || "http://localhost:5173")
 
 const corsOptions = {
   origin: (origin, cb) => {
-    // allow tools/curl/no-origin
     if (!origin) return cb(null, true);
     if (allowedOrigins.includes(origin)) return cb(null, true);
-    // ВАЖЛИВО: повертаємо контрольовану помилку (інакше в axios буде "Network Error")
     return cb(new Error(`CORS blocked for origin: ${origin}`), false);
   },
   credentials: true,
 };
 
 app.use(cors(corsOptions));
-// щоб preflight завжди відповідав
 app.options("*", cors(corsOptions));
 
 // -----------------------
@@ -81,11 +84,10 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
 // -----------------------
-// Dev request log (дуже допомагає дебагу)
+// Dev request log
 // -----------------------
 if (process.env.NODE_ENV !== "production") {
   app.use((req, res, next) => {
-    // не спамимо на uploads
     if (!req.originalUrl.startsWith("/uploads")) {
       console.log(`[${req.method}] ${req.originalUrl}`);
     }
@@ -104,7 +106,7 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.get("/api/health", (req, res) => res.json({ ok: true, ts: Date.now() }));
 
 // -----------------------
-// API routes (ОБОВ'ЯЗКОВО ДО fallback)
+// API routes
 // -----------------------
 app.use("/api/auth", authRoutes);
 app.use("/api/likes", likeRoutes);
@@ -121,7 +123,11 @@ app.use("/api/orders", orderRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/chat", chatRoutes);
 
-// ✅ ВАЖЛИВО: admin ДО /api 404
+// ✅ NEW: inventory before /api 404
+// фронт викликає: GET /api/inventory/product/:productId
+app.use("/api/inventory", inventoryRoutes);
+
+// ✅ admin before /api 404
 app.use("/api/admin", adminRoutes);
 
 app.use("/api/users", userRoutes);
@@ -136,15 +142,12 @@ app.use("/api", (req, res) => {
 });
 
 // -----------------------
-// Global error handler (JSON)
+// Global error handler
 // -----------------------
 app.use((err, req, res, next) => {
   console.error("[SERVER ERROR]", err);
 
-  // CORS помилки часто виглядають як "Network Error" на фронті.
-  // Тут хоч побачиш чітко в терміналі.
   const status = err?.statusCode || err?.status || 500;
-
   res.status(status).json({
     message: err?.message || "Server error",
     path: req.originalUrl,
@@ -163,14 +166,39 @@ const io = new Server(server, {
 });
 
 io.on("connection", (socket) => {
+  // client: socket.emit("join", { userId })
   socket.on("join", ({ userId }) => {
     if (userId) socket.join(String(userId));
   });
 
+  // client: socket.emit("message:send", { to, sender, receiver, text, guestName? })
   socket.on("message:send", async (payload) => {
     try {
-      if (!payload?.to) return;
-      io.to(String(payload.to)).emit("message:new", payload);
+      const to = payload?.to ? String(payload.to) : "";
+      const sender = payload?.sender ? String(payload.sender) : "";
+      const receiver = payload?.receiver ? String(payload.receiver) : to;
+      const text = String(payload?.text || "").trim();
+
+      if (!to || !sender || !receiver || !text) return;
+
+      // ✅ SERVER decides guest by sender
+      const isGuest = sender.startsWith("guest_");
+      const guestName = isGuest ? String(payload?.guestName || "").trim() : "";
+
+      const doc = await Message.create({
+        sender,
+        receiver,
+        text,
+        isGuest,
+        guestName,
+        isRead: false,
+      });
+
+      const msg = doc.toObject();
+
+      // ✅ realtime both sides
+      io.to(String(receiver)).emit("message:new", msg);
+      io.to(String(sender)).emit("message:new", msg);
     } catch (e) {
       console.error("[socket message:send] error:", e);
     }

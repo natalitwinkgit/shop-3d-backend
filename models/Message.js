@@ -2,16 +2,11 @@ import mongoose from "mongoose";
 
 const messageSchema = new mongoose.Schema(
   {
-    // ВАЖЛИВО: зберігаємо як STRING, бо у тебе sender/receiver приходять як строки
-    sender: { type: String, required: true, index: true },
-    receiver: { type: String, required: true, index: true },
-
+    sender: { type: String, required: true, index: true },   // userId або guest_...
+    receiver: { type: String, required: true, index: true }, // userId (admin/user)
     text: { type: String, required: true, trim: true },
-
-    // Якщо пише “гість” (без акаунта) — true
     isGuest: { type: Boolean, default: false },
-
-    // Для адміна: непрочитані повідомлення від партнера
+    guestName: { type: String, default: "" }, // ✅ тільки для гостей (опційно)
     isRead: { type: Boolean, default: false },
   },
   { timestamps: true }

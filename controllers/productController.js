@@ -1,4 +1,6 @@
+// controllers/productController.js
 import Product from "../models/Product.js";
+import Inventory from "../models/Inventory.js";
 import path from "path";
 import fs from "fs";
 
@@ -81,21 +83,15 @@ export const getProductFacets = async (req, res) => {
     if (category) match.category = category;
     if (subCategory && subCategory !== "all") match.subCategory = subCategory;
 
-    const [
-      colorKeys,
-      styleKeys,
-      roomKeys,
-      collectionKeys,
-      materialKeys,
-      manufacturerKeys,
-    ] = await Promise.all([
-      Product.distinct("colorKeys", match),
-      Product.distinct("styleKeys", match),
-      Product.distinct("roomKeys", match),
-      Product.distinct("collectionKeys", match),
-      Product.distinct("specifications.materialKey", match),
-      Product.distinct("specifications.manufacturerKey", match),
-    ]);
+    const [colorKeys, styleKeys, roomKeys, collectionKeys, materialKeys, manufacturerKeys] =
+      await Promise.all([
+        Product.distinct("colorKeys", match),
+        Product.distinct("styleKeys", match),
+        Product.distinct("roomKeys", match),
+        Product.distinct("collectionKeys", match),
+        Product.distinct("specifications.materialKey", match),
+        Product.distinct("specifications.manufacturerKey", match),
+      ]);
 
     res.set("Cache-Control", "no-store");
     res.json({
@@ -113,24 +109,33 @@ export const getProductFacets = async (req, res) => {
 };
 
 /* =======================
-    1) GET /api/products
+    ✅ GET /api/products
+    inventory-first:
+      - returns hasStock + availableTotal
+      - supports query hasStock=1/0
+      - reads inventories.product (NOT productId)
 ======================= */
 export const getProducts = async (req, res) => {
   try {
     const category = getQueryParam(req, "category");
     const subCategory = getQueryParam(req, "subCategory");
     const typeKey = getQueryParam(req, "typeKey");
+
     const materialKey = getQueryParam(req, "materialKey");
     const manufacturerKey = getQueryParam(req, "manufacturerKey");
+
     const priceMin = getQueryParam(req, "priceMin");
     const priceMax = getQueryParam(req, "priceMax");
+
     const hasModel = getQueryParam(req, "hasModel");
     const hasDiscount = getQueryParam(req, "hasDiscount");
-    const inStock = getQueryParam(req, "inStock");
+    const hasStock = getQueryParam(req, "hasStock"); // ✅ inventory-first filter
+
     const colorKeys = getQueryParam(req, "colorKeys");
     const styleKeys = getQueryParam(req, "styleKeys");
     const roomKeys = getQueryParam(req, "roomKeys");
     const collectionKeys = getQueryParam(req, "collectionKeys");
+
     const q = getQueryParam(req, "q");
     const sort = getQueryParam(req, "sort");
 
@@ -154,28 +159,76 @@ export const getProducts = async (req, res) => {
     addRange(filter, "price", priceMin, priceMax);
 
     if (truthy(hasDiscount)) filter.discount = { $gt: 0 };
-    if (inStock !== undefined) filter.inStock = truthy(inStock);
     if (truthy(hasModel)) filter.modelUrl = { $exists: true, $ne: "" };
 
     if (!isEmpty(q)) {
       const rx = new RegExp(escapeRegExp(q), "i");
       filter.$or = [
-        { "name.ua": rx }, { "name.en": rx },
-        { "description.ua": rx }, { "description.en": rx },
-        { sku: rx }, { slug: rx },
+        { "name.ua": rx },
+        { "name.en": rx },
+        { "description.ua": rx },
+        { "description.en": rx },
+        { sku: rx },
+        { slug: rx },
       ];
     }
 
     let sortObj = { createdAt: -1 };
     switch (String(sort || "").toLowerCase()) {
-      case "price_asc": sortObj = { price: 1 }; break;
-      case "price_desc": sortObj = { price: -1 }; break;
-      case "discount_desc": sortObj = { discount: -1 }; break;
-      case "updated": sortObj = { updatedAt: -1 }; break;
-      default: sortObj = { createdAt: -1 }; break;
+      case "price_asc":
+        sortObj = { price: 1 };
+        break;
+      case "price_desc":
+        sortObj = { price: -1 };
+        break;
+      case "discount_desc":
+        sortObj = { discount: -1 };
+        break;
+      case "updated":
+        sortObj = { updatedAt: -1 };
+        break;
+      default:
+        sortObj = { createdAt: -1 };
+        break;
     }
 
-    const list = await Product.find(filter).sort(sortObj);
+    const pipeline = [
+      { $match: filter },
+
+      // ✅ FIX: inventories.product (бо в схемі Inventory поле "product")
+      {
+        $lookup: {
+          from: "inventories",
+          localField: "_id",
+          foreignField: "product",
+          as: "inv",
+        },
+      },
+
+      // totals (empty inv -> 0)
+      {
+        $addFields: {
+          onHandTotal: { $ifNull: [{ $sum: "$inv.onHand" }, 0] },
+          reservedTotal: { $ifNull: [{ $sum: "$inv.reserved" }, 0] },
+        },
+      },
+
+      {
+        $addFields: {
+          availableTotal: { $max: [0, { $subtract: ["$onHandTotal", "$reservedTotal"] }] },
+          hasStock: { $gt: [{ $subtract: ["$onHandTotal", "$reservedTotal"] }, 0] },
+        },
+      },
+
+      // ✅ фільтр по наявності
+      ...(hasStock !== undefined ? [{ $match: { hasStock: truthy(hasStock) } }] : []),
+
+      { $project: { inv: 0 } },
+      { $sort: sortObj },
+    ];
+
+    const list = await Product.aggregate(pipeline);
+
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");
     res.json(list);
   } catch (err) {
@@ -185,13 +238,45 @@ export const getProducts = async (req, res) => {
 };
 
 /* =======================
-    🆕 ДОДАТКОВІ МЕТОДИ (NEW)
+    ✅ GET /api/products/stats
+    inventory-first stats:
+      - group by inventories.product (NOT productId)
 ======================= */
+export const getProductsStats = async (req, res) => {
+  try {
+    const total = await Product.countDocuments();
+    const hasDiscount = await Product.countDocuments({ discount: { $gt: 0 } });
 
-/**
- * 2) GET /api/products/by-slug/:slug
- * Для отримання товару за SEO-посиланням (slug)
- */
+    // ✅ FIX: group by product (бо в схемі Inventory поле "product")
+    const inStockAgg = await Inventory.aggregate([
+      {
+        $group: {
+          _id: "$product",
+          onHandTotal: { $sum: "$onHand" },
+          reservedTotal: { $sum: "$reserved" },
+        },
+      },
+      { $addFields: { availableTotal: { $subtract: ["$onHandTotal", "$reservedTotal"] } } },
+      { $match: { availableTotal: { $gt: 0 } } },
+      { $count: "count" },
+    ]);
+
+    const inStock = inStockAgg?.[0]?.count || 0;
+
+    res.json({
+      total,
+      inStock,
+      outOfStock: Math.max(0, total - inStock),
+      hasDiscount,
+    });
+  } catch (err) {
+    res.status(500).json({ message: "Статистика недоступна" });
+  }
+};
+
+/* =======================
+    CRUD (як було)
+======================= */
 export const getProductBySlug = async (req, res) => {
   try {
     const product = await Product.findOne({ slug: req.params.slug });
@@ -201,25 +286,6 @@ export const getProductBySlug = async (req, res) => {
     res.status(500).json({ message: "Помилка сервера" });
   }
 };
-
-/**
- * 3) GET /api/products/stats
- * Коротка статистика для адмін-панелі
- */
-export const getProductsStats = async (req, res) => {
-  try {
-    const total = await Product.countDocuments();
-    const inStock = await Product.countDocuments({ inStock: true });
-    const hasDiscount = await Product.countDocuments({ discount: { $gt: 0 } });
-    res.json({ total, inStock, outOfStock: total - inStock, hasDiscount });
-  } catch (err) {
-    res.status(500).json({ message: "Статистика недоступна" });
-  }
-};
-
-/* =======================
-    СТАНДАРТНІ CRUD (ПРОДОВЖЕННЯ)
-======================= */
 
 export const getProductById = async (req, res) => {
   try {
@@ -240,8 +306,8 @@ export const createProduct = async (req, res) => {
 
     const images = req.files?.images?.map((f) => `/uploads/products/${category}/${f.filename}`) || [];
     const modelUrl = req.files?.modelFile?.[0]
-        ? `/uploads/products/${category}/${req.files.modelFile[0].filename}`
-        : (req.body.modelUrl || "");
+      ? `/uploads/products/${category}/${req.files.modelFile[0].filename}`
+      : req.body.modelUrl || "";
 
     const product = new Product({
       ...req.body,
@@ -269,6 +335,11 @@ export const updateProduct = async (req, res) => {
     if (!product) return res.status(404).json({ message: "Не знайдено" });
 
     const updateData = { ...req.body };
+
+    // ❌ не зберігаємо
+    delete updateData.inStock;
+    delete updateData.stockQty;
+
     ["styleKeys", "colorKeys", "roomKeys", "collectionKeys"].forEach((key) => {
       if (req.body[key] !== undefined) updateData[key] = parseCsv(req.body[key]) || [];
     });
@@ -285,7 +356,12 @@ export const updateProduct = async (req, res) => {
       updateData.modelUrl = `/uploads/products/${category}/${req.files.modelFile[0].filename}`;
     }
 
-    const updated = await Product.findByIdAndUpdate(req.params.id, { $set: updateData }, { new: true });
+    const updated = await Product.findByIdAndUpdate(
+      req.params.id,
+      { $set: updateData },
+      { new: true }
+    );
+
     res.json(updated);
   } catch (err) {
     console.error("[updateProduct] error:", err);

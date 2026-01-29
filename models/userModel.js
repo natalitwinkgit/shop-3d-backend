@@ -41,8 +41,12 @@ const orderSchema = new mongoose.Schema({
 
   customer: {
     fullName: { type: String, required: true },
-    phone: { type: String, required: true },
-    email: { type: String, default: "" },
+phone: {
+  type: String,
+  default: null,
+  trim: true,
+}
+,    email: { type: String, default: "" },
   },
 
   delivery: {
