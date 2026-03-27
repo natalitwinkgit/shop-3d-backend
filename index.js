@@ -1,4 +1,4 @@
-// server/index.js  ✅ UPDATED FULL CODE (+ /api/inventory routes)
+// server/index.js  ✅ UPDATED FULL CODE (+ Vercel preview CORS)
 import express from "express";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
@@ -32,11 +32,11 @@ import userRoutes from "./routes/userRoutes.js";
 import heartbeatRoutes from "./routes/heartbeatRoutes.js";
 import i18nMissingRoutes from "./routes/i18nMissingRoutes.js";
 
-// ✅ NEW: inventory routes (stock by locations)
+// ✅ inventory routes
 import inventoryRoutes from "./routes/inventoryRoutes.js";
 
-// ✅ model for saving socket messages
-import Message from "./models/Message.js";
+import { createChatMessage, registerChatEmitter } from "./services/chatMessageService.js";
+import { ensureAiAdminUser } from "./services/aiAdminService.js";
 
 // ESM __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -57,17 +57,47 @@ app.use(
 );
 
 // -----------------------
-// CORS
+// ✅ CORS (supports Vercel preview domains)
 // -----------------------
-const allowedOrigins = String(process.env.CLIENT_URL || "http://localhost:5173")
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
+const parseList = (v) =>
+  String(v || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+// ENV allowlist (через кому). Можеш покласти сюди prod домен(и)
+const envAllowed = parseList(process.env.CLIENT_URL);
+
+// Dev allowlist
+const devAllowed = [
+  "http://localhost:5173",
+  "http://localhost:3000",
+  "http://localhost:8080",
+];
+
+// ✅ твій прод домен на Vercel (можеш також додати в CLIENT_URL)
+const vercelProd = "https://shop-3d-frontend-1222.vercel.app";
+
+// ✅ preview домени Vercel твого проекту (строго під твій team)
+const vercelPreviewRegex =
+  /^https:\/\/shop-3d-frontend-1222-[a-z0-9-]+-nataliasumska95-1299s-projects\.vercel\.app$/i;
+
+// (опційно) дозволити будь-який *.vercel.app — якщо не хочеш, прибери
+// const anyVercelRegex = /^https:\/\/[a-z0-9-]+\.vercel\.app$/i;
+
+const allowedOrigins = Array.from(new Set([...envAllowed, ...devAllowed, vercelProd]));
+
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true; // same-origin / server-to-server
+  if (allowedOrigins.includes(origin)) return true;
+  if (vercelPreviewRegex.test(origin)) return true;
+  // if (anyVercelRegex.test(origin)) return true; // optional
+  return false;
+};
 
 const corsOptions = {
   origin: (origin, cb) => {
-    if (!origin) return cb(null, true);
-    if (allowedOrigins.includes(origin)) return cb(null, true);
+    if (isAllowedOrigin(origin)) return cb(null, true);
     return cb(new Error(`CORS blocked for origin: ${origin}`), false);
   },
   credentials: true,
@@ -123,8 +153,7 @@ app.use("/api/orders", orderRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/chat", chatRoutes);
 
-// ✅ NEW: inventory before /api 404
-// фронт викликає: GET /api/inventory/product/:productId
+// ✅ inventory before /api 404
 app.use("/api/inventory", inventoryRoutes);
 
 // ✅ admin before /api 404
@@ -156,52 +185,92 @@ app.use((err, req, res, next) => {
 });
 
 // -----------------------
-// Socket.io
+// Socket.io  ✅ CORS same as Express
 // -----------------------
 const io = new Server(server, {
   cors: {
-    origin: allowedOrigins,
+    origin: (origin, cb) => {
+      if (isAllowedOrigin(origin)) return cb(null, true);
+      return cb(new Error(`CORS blocked for origin: ${origin}`), false);
+    },
     credentials: true,
   },
 });
 
+registerChatEmitter(io);
+
 io.on("connection", (socket) => {
-  // client: socket.emit("join", { userId })
-  socket.on("join", ({ userId }) => {
-    if (userId) socket.join(String(userId));
-  });
+  const joinRoom = ({ userId, id, roomId }) => {
+    const rooms = Array.from(
+      new Set(
+        [userId, id, roomId]
+          .map((value) => String(value || "").trim())
+          .filter(Boolean)
+      )
+    );
 
-  // client: socket.emit("message:send", { to, sender, receiver, text, guestName? })
-  socket.on("message:send", async (payload) => {
+    for (const room of rooms) {
+      socket.join(room);
+    }
+  };
+
+  const handleSendMessage = async (payload) => {
     try {
-      const to = payload?.to ? String(payload.to) : "";
-      const sender = payload?.sender ? String(payload.sender) : "";
-      const receiver = payload?.receiver ? String(payload.receiver) : to;
-      const text = String(payload?.text || "").trim();
+      const sender = String(
+        payload?.sender ??
+          payload?.from ??
+          payload?.senderId ??
+          ""
+      ).trim();
+      const receiver = String(
+        payload?.receiver ??
+          payload?.to ??
+          payload?.receiverId ??
+          payload?.chatUserId ??
+          ""
+      ).trim();
+      const text = String(payload?.text ?? payload?.message ?? "").trim();
 
-      if (!to || !sender || !receiver || !text) return;
+      if (!sender || !receiver || !text) {
+        console.warn("[socket message:send] skipped invalid payload", {
+          hasSender: !!sender,
+          hasReceiver: !!receiver,
+          hasText: !!text,
+        });
+        return;
+      }
 
-      // ✅ SERVER decides guest by sender
+      socket.join(sender);
+
       const isGuest = sender.startsWith("guest_");
-      const guestName = isGuest ? String(payload?.guestName || "").trim() : "";
+      const guestName = isGuest
+        ? String(payload?.guestName ?? payload?.senderName ?? payload?.name ?? "").trim()
+        : "";
 
-      const doc = await Message.create({
+      await createChatMessage({
         sender,
         receiver,
         text,
         isGuest,
         guestName,
-        isRead: false,
       });
-
-      const msg = doc.toObject();
-
-      // ✅ realtime both sides
-      io.to(String(receiver)).emit("message:new", msg);
-      io.to(String(sender)).emit("message:new", msg);
     } catch (e) {
       console.error("[socket message:send] error:", e);
     }
+  };
+
+  socket.on("join", joinRoom);
+
+  socket.on("join_chat", ({ userId, id, roomId }) => {
+    joinRoom({ userId, id, roomId });
+  });
+
+  socket.on("message:send", async (payload) => {
+    await handleSendMessage(payload);
+  });
+
+  socket.on("send_message", async (payload) => {
+    await handleSendMessage(payload);
   });
 
   socket.on("disconnect", () => {});
@@ -223,9 +292,25 @@ async function start() {
     await mongoose.connect(uri);
     console.log("✅ MongoDB connected");
 
+    const shouldBootstrapAiAdmin =
+      Boolean(String(process.env.AI_ADMIN_EMAIL || "").trim()) ||
+      Boolean(String(process.env.AI_ADMIN_NAME || "").trim()) ||
+      Boolean(String(process.env.AI_ADMIN_PASSWORD || "").trim()) ||
+      Boolean(String(process.env.OPENAI_API_KEY || "").trim());
+
+    if (shouldBootstrapAiAdmin) {
+      try {
+        const aiAdminUser = await ensureAiAdminUser();
+        console.log("✅ AI admin ready:", String(aiAdminUser.email || aiAdminUser._id));
+      } catch (bootstrapError) {
+        console.error("❌ AI admin bootstrap error:", bootstrapError);
+      }
+    }
+
     server.listen(PORT, () => {
       console.log(`✅ Server running on http://localhost:${PORT}`);
       console.log("✅ Allowed origins:", allowedOrigins);
+      console.log("✅ Vercel preview regex:", String(vercelPreviewRegex));
     });
   } catch (e) {
     console.error("❌ Mongo connect error:", e);

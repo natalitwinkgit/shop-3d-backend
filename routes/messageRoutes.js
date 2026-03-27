@@ -1,18 +1,23 @@
 import express from "express";
-import Message from "../models/Message.js";
+import { protect } from "../middleware/authMiddleware.js";
+import { getConversationHistory, markConversationRead } from "../services/adminChatService.js";
 
 const router = express.Router();
 
+const canAccessMessages = (req, firstId, secondId) => {
+  const currentUserId = String(req.user?._id || req.user?.id || "");
+  return req.user?.role === "admin" || currentUserId === String(firstId) || currentUserId === String(secondId);
+};
+
 // Отримати історію повідомлень між двома користувачами
-router.get("/:userId1/:userId2", async (req, res) => {
+router.get("/:userId1/:userId2", protect, async (req, res) => {
   const { userId1, userId2 } = req.params;
   try {
-    const history = await Message.find({
-      $or: [
-        { sender: userId1, receiver: userId2 },
-        { sender: userId2, receiver: userId1 }
-      ]
-    }).sort({ createdAt: 1 }); // Сортуємо від старих до нових
+    if (!canAccessMessages(req, userId1, userId2)) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
+    const history = await getConversationHistory({ userId1, userId2 });
     
     res.json(history);
   } catch (err) {
@@ -21,12 +26,16 @@ router.get("/:userId1/:userId2", async (req, res) => {
 });
 
 // Позначити повідомлення як прочитані (для адмінки)
-router.patch("/read/:senderId/:receiverId", async (req, res) => {
+router.patch("/read/:senderId/:receiverId", protect, async (req, res) => {
   try {
-    await Message.updateMany(
-      { sender: req.params.senderId, receiver: req.params.receiverId, isRead: false },
-      { $set: { isRead: true } }
-    );
+    if (!canAccessMessages(req, req.params.senderId, req.params.receiverId)) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
+    await markConversationRead({
+      senderId: req.params.senderId,
+      receiverId: req.params.receiverId,
+    });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ message: "Помилка" });

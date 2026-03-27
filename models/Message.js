@@ -8,6 +8,13 @@ const messageSchema = new mongoose.Schema(
     isGuest: { type: Boolean, default: false },
     guestName: { type: String, default: "" }, // ✅ тільки для гостей (опційно)
     isRead: { type: Boolean, default: false },
+    source: {
+      type: String,
+      enum: ["human", "ai_admin"],
+      default: "human",
+      index: true,
+    },
+    meta: { type: mongoose.Schema.Types.Mixed, default: null },
   },
   { timestamps: true }
 );

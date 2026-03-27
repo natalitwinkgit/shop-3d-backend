@@ -1,55 +1,34 @@
 // server/routes/chatRoutes.js
 import express from "express";
-import User from "../models/userModel.js";
-import Message from "../models/Message.js";
+import { protect } from "../middleware/authMiddleware.js";
+import {
+  getConversationHistory,
+  getSupportAdminProfile,
+  markConversationRead,
+} from "../services/adminChatService.js";
 
 const router = express.Router();
 
-/**
- * GET /api/chat/admin-id
- * (alias: /api/chat/support-admin)
- * Повертає _id адміна, який є “підтримкою”.
- */
+const canAccessChat = (req, firstId, secondId) => {
+  const currentUserId = String(req.user?._id || req.user?.id || "");
+  return req.user?.role === "admin" || currentUserId === String(firstId) || currentUserId === String(secondId);
+};
+
 router.get("/admin-id", async (req, res) => {
   try {
-    const supportEmail = process.env.SUPPORT_ADMIN_EMAIL;
-
-    let admin = null;
-
-    if (supportEmail) {
-      admin = await User.findOne({ email: supportEmail, role: "admin" }).select("_id").lean();
-    }
-
-    if (!admin) {
-      admin = await User.findOne({ role: "admin" }).select("_id").lean();
-    }
-
-    if (!admin) return res.status(404).json({ message: "No admin found" });
-
-    res.json({ adminId: String(admin._id) });
+    const adminProfile = await getSupportAdminProfile();
+    if (!adminProfile) return res.status(404).json({ message: "No admin found" });
+    res.json({ adminId: adminProfile.adminId });
   } catch (e) {
     res.status(500).json({ message: "Failed to get admin id" });
   }
 });
 
-// ✅ alias, щоб фронт міг викликати /support-admin
 router.get("/support-admin", async (req, res) => {
   try {
-    const supportEmail = process.env.SUPPORT_ADMIN_EMAIL;
-
-    let admin = null;
-
-    if (supportEmail) {
-      admin = await User.findOne({ email: supportEmail, role: "admin" }).select("_id").lean();
-    }
-
-    if (!admin) {
-      admin = await User.findOne({ role: "admin" }).select("_id").lean();
-    }
-
-    if (!admin) return res.status(404).json({ message: "No admin found" });
-
-    res.json({ adminId: String(admin._id) });
+    const adminProfile = await getSupportAdminProfile();
+    if (!adminProfile) return res.status(404).json({ message: "No admin found" });
+    res.json({ adminId: adminProfile.adminId });
   } catch (e) {
     res.status(500).json({ message: "Failed to get admin id" });
   }
@@ -59,7 +38,7 @@ router.get("/support-admin", async (req, res) => {
  * PATCH /api/chat/read/:senderId/:receiverId
  * Позначити повідомлення як прочитані: sender -> receiver
  */
-router.patch("/read/:senderId/:receiverId", async (req, res) => {
+router.patch("/read/:senderId/:receiverId", protect, async (req, res) => {
   try {
     const { senderId, receiverId } = req.params;
 
@@ -67,10 +46,11 @@ router.patch("/read/:senderId/:receiverId", async (req, res) => {
       return res.status(400).json({ message: "senderId and receiverId required" });
     }
 
-    await Message.updateMany(
-      { sender: String(senderId), receiver: String(receiverId), isRead: false },
-      { $set: { isRead: true } }
-    );
+    if (!canAccessChat(req, senderId, receiverId)) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
+    await markConversationRead({ senderId, receiverId });
 
     res.status(204).end();
   } catch (e) {
@@ -82,19 +62,18 @@ router.patch("/read/:senderId/:receiverId", async (req, res) => {
  * GET /api/chat/:userId1/:userId2
  * Історія чату
  */
-router.get("/:userId1/:userId2", async (req, res) => {
+router.get("/:userId1/:userId2", protect, async (req, res) => {
   try {
     const { userId1, userId2 } = req.params;
     if (!userId1 || !userId2) {
       return res.status(400).json({ message: "Two user ids required" });
     }
 
-    const history = await Message.find({
-      $or: [
-        { sender: String(userId1), receiver: String(userId2) },
-        { sender: String(userId2), receiver: String(userId1) },
-      ],
-    }).sort({ createdAt: 1 });
+    if (!canAccessChat(req, userId1, userId2)) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
+    const history = await getConversationHistory({ userId1, userId2 });
 
     res.json(history);
   } catch (e) {
