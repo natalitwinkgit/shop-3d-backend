@@ -3,20 +3,10 @@
 import User from "../models/userModel.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-
-// Утиліта для безпечного повернення об'єкта користувача без пароля
-const getUserResponse = (user) => {
-  return {
-    id: user._id,
-    name: user.name,
-    email: user.email,
-    role: user.role,
-    // 🔥 ДОДАНО: повертаємо статус, щоб фронт знав
-    status: user.status, 
-    isOnline: user.isOnline,
-    likes: user.likes || [],
-  };
-};
+import {
+  buildPublicUserResponse,
+  markUserOffline,
+} from "../services/userProfileService.js";
 
 // ---------- Реєстрація ----------
 export const registerUser = async (req, res) => {
@@ -45,13 +35,15 @@ export const registerUser = async (req, res) => {
       password: hashedPassword,
       role: role || "user",
       status: "active", // За замовчуванням активний
-      likes: []
+      likes: [],
+      isOnline: false,
+      presence: "offline",
     });
 
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
     res.status(201).json({
-      user: getUserResponse(user),
+      user: buildPublicUserResponse(user),
       token,
     });
 
@@ -90,12 +82,16 @@ export const loginUser = async (req, res) => {
 
     // Оновлюємо статус онлайн
     user.isOnline = true;
+    user.presence = "online";
+    user.lastSeen = new Date();
+    user.lastActivityAt = new Date();
+    user.lastLoginAt = new Date();
     await user.save();
 
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
     res.status(200).json({
-      user: getUserResponse(user),
+      user: buildPublicUserResponse(user),
       token,
     });
 
@@ -120,7 +116,7 @@ export const getMe = async (req, res) => {
         return res.status(403).json({ message: "Ваш акаунт заблоковано." });
     }
 
-    res.status(200).json(getUserResponse(user));
+    res.status(200).json(buildPublicUserResponse(user));
   } catch (err) {
     console.error("Помилка при отриманні користувача:", err);
     res.status(500).json({ message: "Server error" });
@@ -159,7 +155,7 @@ export const toggleLike = async (req, res) => {
 
     await user.save();
     const updatedUser = await User.findById(req.user.id).select("-password");
-    res.status(200).json(getUserResponse(updatedUser));
+    res.status(200).json(buildPublicUserResponse(updatedUser));
 
   } catch (err) {
     console.error("Помилка toggleLike:", err);
@@ -184,4 +180,27 @@ export const forgotPassword = async (req, res) => {
 
 export const resetPassword = async (req, res) => {
   res.status(200).json({ message: "Password reset logic placeholder" });
+};
+
+export const logoutUser = async (req, res) => {
+  try {
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ message: "Немає доступу. Недійсний токен." });
+    }
+
+    const user = await markUserOffline(req.user.id, {
+      page: req.body?.page || "",
+      source: "logout",
+    });
+
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    res.status(200).json({
+      ok: true,
+      user: buildPublicUserResponse(user),
+    });
+  } catch (err) {
+    console.error("Помилка logout:", err);
+    res.status(500).json({ message: "Server error" });
+  }
 };

@@ -52,13 +52,20 @@ export const protect = async (req, res, next) => {
       return res.status(401).json({ message: "Не авторизовано, користувач не знайдений" });
     }
 
-    if (user.isBlocked) {
+    if (user.isBlocked || user.status === "banned") {
       return res.status(403).json({ message: "Користувача заблоковано" });
     }
 
-    if (!user.isOnline) {
+    const now = new Date();
+    const lastSeenTs = new Date(user.lastSeen || 0).getTime();
+    const shouldTouchPresence =
+      !user.isOnline || !lastSeenTs || now.getTime() - lastSeenTs > 30 * 1000;
+
+    if (shouldTouchPresence) {
       user.isOnline = true;
-      user.lastActive = new Date();
+      user.presence = "online";
+      user.lastSeen = now;
+      user.lastActivityAt = now;
       await user.save();
     }
 
