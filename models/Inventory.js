@@ -16,6 +16,9 @@ const InventorySchema = new mongoose.Schema(
     },
     onHand: { type: Number, default: 0, min: 0 },
     reserved: { type: Number, default: 0, min: 0 },
+    zone: { type: String, default: "", trim: true },
+    note: { type: String, default: "", trim: true },
+    isShowcase: { type: Boolean, default: false, index: true },
   },
   { timestamps: true }
 );

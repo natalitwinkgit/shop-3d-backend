@@ -66,7 +66,7 @@ const upload = multer({ storage });
 
 // 1) Статистика для адмін-панелі (Додано)
 // Важливо: ставити перед /:id, щоб 'stats' не сприйнялося як ID
-router.get("/stats", protect, getProductsStats);
+router.get("/stats", protect, admin, getProductsStats);
 
 // 2) GET /api/products — список + query filter
 router.get("/", getProducts);
@@ -104,6 +104,7 @@ router.get("/:id", getProductById);
 router.post(
   "/",
   protect,
+  admin,
   upload.fields([
     { name: "images", maxCount: 5 },
     { name: "modelFile", maxCount: 1 },
@@ -115,6 +116,7 @@ router.post(
 router.put(
   "/:id",
   protect,
+  admin,
   attachCategoryFromProduct,
   upload.fields([
     { name: "images", maxCount: 5 },
@@ -124,6 +126,6 @@ router.put(
 );
 
 // 8) DELETE /api/products/:id — Видалення
-router.delete("/:id", protect, deleteProduct);
+router.delete("/:id", protect, admin, deleteProduct);
 
 export default router;

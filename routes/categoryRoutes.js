@@ -4,6 +4,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import Category from "../models/Category.js";
+import { protect, admin } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
@@ -73,7 +74,7 @@ router.get("/:category/children", async (req, res) => {
  *  ADD SUBCATEGORY
  *  POST /api/categories/:category/children
  ========================= */
-router.post("/:category/children", async (req, res) => {
+router.post("/:category/children", protect, admin, async (req, res) => {
   try {
     const { category } = req.params;
     const { key, name_ua, name_en, image = "", order = 0 } = req.body;
@@ -106,7 +107,7 @@ router.post("/:category/children", async (req, res) => {
  *  UPDATE SUBCATEGORY
  *  PUT /api/categories/:category/children/:key
  ========================= */
-router.put("/:category/children/:key", async (req, res) => {
+router.put("/:category/children/:key", protect, admin, async (req, res) => {
   try {
     const { category, key } = req.params;
     const { name_ua, name_en, image, order } = req.body;
@@ -133,7 +134,7 @@ router.put("/:category/children/:key", async (req, res) => {
  *  DELETE SUBCATEGORY
  *  DELETE /api/categories/:category/children/:key
  ========================= */
-router.delete("/:category/children/:key", async (req, res) => {
+router.delete("/:category/children/:key", protect, admin, async (req, res) => {
   try {
     const { category, key } = req.params;
 
@@ -153,7 +154,7 @@ router.delete("/:category/children/:key", async (req, res) => {
  *  CREATE PARENT CATEGORY (твій існуючий POST)
  *  POST /api/categories
  ========================= */
-router.post("/", upload.single("image"), async (req, res) => {
+router.post("/", protect, admin, upload.single("image"), async (req, res) => {
   try {
     const { category, name_ua, name_en, imageUrl, order = 0 } = req.body;
 
@@ -187,7 +188,7 @@ router.post("/", upload.single("image"), async (req, res) => {
 /** =========================
  *  UPDATE/DELETE BY ID (щоб не ламалось на не-ObjectId)
  ========================= */
-router.put("/:id", upload.single("image"), async (req, res) => {
+router.put("/:id", protect, admin, upload.single("image"), async (req, res) => {
   try {
     if (!mongoose.isValidObjectId(req.params.id)) {
       return res.status(400).json({ message: "Invalid category id" });
@@ -213,7 +214,7 @@ router.put("/:id", upload.single("image"), async (req, res) => {
   }
 });
 
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", protect, admin, async (req, res) => {
   try {
     if (!mongoose.isValidObjectId(req.params.id)) {
       return res.status(400).json({ message: "Invalid category id" });

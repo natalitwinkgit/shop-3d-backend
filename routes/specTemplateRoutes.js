@@ -1,6 +1,7 @@
 import express from "express";
 import SpecTemplate from "../models/SpecTemplate.js";
 import SpecField from "../models/SpecField.js";
+import { protect, admin } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
@@ -29,7 +30,7 @@ router.get("/:typeKey", async (req, res) => {
  * POST /api/spec-templates/:typeKey/add-field
  * body: { sectionId?: "main", field: { key,label,kind,path,dict?,unit?,required? } }
  */
-router.post("/:typeKey/add-field", async (req, res) => {
+router.post("/:typeKey/add-field", protect, admin, async (req, res) => {
   try {
     const { typeKey } = req.params;
     const { sectionId = "main", field } = req.body || {};
