@@ -37,8 +37,25 @@ const orderSchema = new mongoose.Schema(
 
     totals: {
       subtotal: { type: Number, required: true, min: 0 },
+      loyaltyDiscount: { type: Number, default: 0, min: 0 },
+      rewardDiscount: { type: Number, default: 0, min: 0 },
       totalSavings: { type: Number, default: 0, min: 0 },
       cartTotal: { type: Number, required: true, min: 0 },
+    },
+
+    loyaltySnapshot: {
+      cardNumber: { type: String, default: "" },
+      tier: { type: String, default: "none" },
+      baseDiscountPct: { type: Number, default: 0, min: 0, max: 100 },
+    },
+
+    appliedReward: {
+      rewardId: { type: String, default: "" },
+      type: { type: String, default: "" },
+      title: { type: String, default: "" },
+      discountPct: { type: Number, default: 0, min: 0, max: 100 },
+      amountOff: { type: Number, default: 0, min: 0 },
+      minOrderTotal: { type: Number, default: 0, min: 0 },
     },
 
     status: {

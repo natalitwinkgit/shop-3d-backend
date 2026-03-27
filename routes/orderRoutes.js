@@ -5,6 +5,7 @@ import { admin } from "../middleware/authMiddleware.js";
 
 import {
   createMyOrder,
+  previewMyOrder,
   listMyOrders,
   getMyOrder,
   adminListOrders,
@@ -17,6 +18,7 @@ import {
 const router = express.Router();
 
 /* user */
+router.post("/preview", protect, previewMyOrder);
 router.post("/", protect, createMyOrder);
 router.get("/my", protect, listMyOrders);
 router.get("/my/:id", protect, getMyOrder);

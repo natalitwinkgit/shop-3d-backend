@@ -4,6 +4,12 @@ import Order from "../models/Order.js";
 import User from "../models/userModel.js";
 import Product from "../models/Product.js";
 import Location from "../models/Location.js";
+import {
+  buildCheckoutDiscountSummary,
+  markRewardUsedByOrder,
+  restoreRewardFromOrder,
+  syncUserCommerceData,
+} from "../services/userProfileService.js";
 
 const isObjectId = (v) => mongoose.Types.ObjectId.isValid(String(v || ""));
 
@@ -15,6 +21,18 @@ const toNumber = (v, fallback = 0) => {
 };
 
 const pickStr = (v) => String(v ?? "").trim();
+
+const roundMoney = (value) => Math.max(0, Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100);
+
+const computeProductUnitPrice = (productDoc) => {
+  const price = Math.max(0, toNumber(productDoc?.price, 0));
+  const discountPct = Math.max(
+    0,
+    Math.min(100, toNumber(productDoc?.discount ?? productDoc?.discountPct ?? 0, 0))
+  );
+
+  return roundMoney(price * (1 - discountPct / 100));
+};
 
 const assertUser = (req) => {
   const id = req.user?._id || req.user?.id;
@@ -35,6 +53,7 @@ export const createMyOrder = async (req, res) => {
     const userId = assertUser(req);
 
     const payload = req.body || {};
+    const requestedRewardId = pickStr(payload.rewardId || payload?.reward?.rewardId);
 
     // --- validate customer ---
     const customer = payload.customer || {};
@@ -107,7 +126,7 @@ export const createMyOrder = async (req, res) => {
 
     // Load products to create snapshot (name, price, sku, image)
     const products = await Product.find({ _id: { $in: ids } })
-      .select("_id name price finalPrice sku images image discountPct")
+      .select("_id name price discount sku images image")
       .lean();
 
     const byId = new Map(products.map((p) => [String(p._id), p]));
@@ -121,13 +140,7 @@ export const createMyOrder = async (req, res) => {
 
       const qty = Math.max(1, Math.floor(toNumber(it.qty, 1)));
 
-      // price snapshot:
-      // - if client sends price, we can accept it but safer to use product finalPrice/price
-      // - if you have discount logic server-side, use your finalPrice field; else fallback to price
-      const priceSnapshot =
-        Number.isFinite(toNumber(p.finalPrice)) && toNumber(p.finalPrice) > 0
-          ? toNumber(p.finalPrice)
-          : toNumber(p.price);
+      const priceSnapshot = computeProductUnitPrice(p);
 
       const nameSnapshot = pickStr(it.name) || pickStr(p?.name?.ua) || pickStr(p?.name?.en) || "Product";
       const skuSnapshot = pickStr(it.sku) || pickStr(p.sku) || "";
@@ -147,16 +160,16 @@ export const createMyOrder = async (req, res) => {
     });
 
     // --- totals ---
-    // Prefer server computed totals for integrity
-    const subtotal = items.reduce((sum, it) => sum + it.qty * it.price, 0);
+    const subtotal = roundMoney(items.reduce((sum, it) => sum + it.qty * it.price, 0));
+    const discountSummary = await buildCheckoutDiscountSummary({
+      userId,
+      subtotal,
+      rewardId: requestedRewardId,
+    });
 
-    // If you have savings on server, calculate; else accept from client but clamp
-    const totalsRaw = payload.totals || {};
-    const totalSavings = Math.max(0, toNumber(totalsRaw.totalSavings, 0));
-
-    // cartTotal: allow client to send, but keep consistent with subtotal - savings if savings exists
-    const cartTotalRaw = toNumber(totalsRaw.cartTotal, subtotal - totalSavings);
-    const cartTotal = Math.max(0, cartTotalRaw);
+    if (requestedRewardId && !discountSummary.selectedReward) {
+      return res.status(400).json({ message: "Reward is not available for this order" });
+    }
 
     const comment = pickStr(payload.comment);
 
@@ -174,9 +187,33 @@ export const createMyOrder = async (req, res) => {
       items,
       totals: {
         subtotal,
-        totalSavings,
-        cartTotal,
+        loyaltyDiscount: discountSummary.loyaltyDiscount,
+        rewardDiscount: discountSummary.rewardDiscount,
+        totalSavings: discountSummary.totalSavings,
+        cartTotal: discountSummary.cartTotal,
       },
+      loyaltySnapshot: {
+        cardNumber: discountSummary.loyalty.cardNumber || "",
+        tier: discountSummary.loyalty.tier || "none",
+        baseDiscountPct: toNumber(discountSummary.loyalty.baseDiscountPct, 0),
+      },
+      appliedReward: discountSummary.selectedReward
+        ? {
+            rewardId: discountSummary.selectedReward.rewardId || "",
+            type: discountSummary.selectedReward.type || "",
+            title: discountSummary.selectedReward.title || "",
+            discountPct: toNumber(discountSummary.selectedReward.discountPct, 0),
+            amountOff: toNumber(discountSummary.selectedReward.amountOff, 0),
+            minOrderTotal: toNumber(discountSummary.selectedReward.minOrderTotal, 0),
+          }
+        : {
+            rewardId: "",
+            type: "",
+            title: "",
+            discountPct: 0,
+            amountOff: 0,
+            minOrderTotal: 0,
+          },
       status: "new",
       scheduledAt: null,
       adminNote: "",
@@ -185,13 +222,119 @@ export const createMyOrder = async (req, res) => {
 
     // Link order to user (Variant B)
     // Ensure user schema has `orders: [{ type: ObjectId, ref: 'Order' }]`
-    await User.updateOne({ _id: userId }, { $addToSet: { orders: order._id } });
+    await User.updateOne(
+      { _id: userId },
+      {
+        $addToSet: { orders: order._id },
+        $set: {
+          ...(phone ? { phone } : {}),
+          lastSeen: new Date(),
+          lastActivityAt: new Date(),
+        },
+      }
+    );
+
+    if (discountSummary.selectedReward?.rewardId) {
+      await markRewardUsedByOrder({
+        userId,
+        rewardId: discountSummary.selectedReward.rewardId,
+        orderId: order._id,
+      });
+    }
+
+    await syncUserCommerceData(userId);
 
     res.status(201).json(order);
   } catch (error) {
     const status = error.statusCode || 500;
     console.error("❌ createMyOrder error:", error);
     res.status(status).json({ message: error.message || "Server error creating order" });
+  }
+};
+
+/**
+ * USER: POST /api/orders/preview
+ * Preview order totals with loyalty card and active reward.
+ */
+export const previewMyOrder = async (req, res) => {
+  try {
+    const userId = assertUser(req);
+    const payload = req.body || {};
+    const requestedRewardId = pickStr(payload.rewardId || payload?.reward?.rewardId);
+
+    const itemsRaw = Array.isArray(payload.items) ? payload.items : [];
+    if (itemsRaw.length === 0) return res.status(400).json({ message: "Order items are required" });
+
+    const ids = itemsRaw
+      .map((it) => it.productId)
+      .filter(Boolean)
+      .map(String)
+      .filter(isObjectId);
+
+    if (ids.length !== itemsRaw.length) {
+      return res.status(400).json({ message: "Each item must contain valid productId" });
+    }
+
+    const products = await Product.find({ _id: { $in: ids } })
+      .select("_id name price discount sku images image")
+      .lean();
+
+    const byId = new Map(products.map((p) => [String(p._id), p]));
+
+    const items = itemsRaw.map((it) => {
+      const p = byId.get(String(it.productId));
+      if (!p) {
+        throw Object.assign(new Error("Product not found in items"), { statusCode: 400 });
+      }
+
+      const qty = Math.max(1, Math.floor(toNumber(it.qty, 1)));
+      const unitPrice = computeProductUnitPrice(p);
+
+      return {
+        productId: String(p._id),
+        name: pickStr(it.name) || pickStr(p?.name?.ua) || pickStr(p?.name?.en) || "Product",
+        qty,
+        unitPrice,
+        lineTotal: roundMoney(unitPrice * qty),
+      };
+    });
+
+    const subtotal = roundMoney(items.reduce((sum, item) => sum + item.lineTotal, 0));
+    const discountSummary = await buildCheckoutDiscountSummary({
+      userId,
+      subtotal,
+      rewardId: requestedRewardId,
+    });
+
+    if (requestedRewardId && !discountSummary.selectedReward) {
+      return res.status(400).json({ message: "Reward is not available for this order" });
+    }
+
+    return res.json({
+      items,
+      totals: {
+        subtotal,
+        loyaltyDiscount: discountSummary.loyaltyDiscount,
+        rewardDiscount: discountSummary.rewardDiscount,
+        totalSavings: discountSummary.totalSavings,
+        cartTotal: discountSummary.cartTotal,
+      },
+      loyalty: discountSummary.loyalty,
+      appliedReward: discountSummary.selectedReward
+        ? {
+            rewardId: discountSummary.selectedReward.rewardId,
+            type: discountSummary.selectedReward.type,
+            title: discountSummary.selectedReward.title,
+            discountPct: toNumber(discountSummary.selectedReward.discountPct, 0),
+            amountOff: toNumber(discountSummary.selectedReward.amountOff, 0),
+            minOrderTotal: toNumber(discountSummary.selectedReward.minOrderTotal, 0),
+          }
+        : null,
+    });
+  } catch (error) {
+    const status = error.statusCode || 500;
+    console.error("❌ previewMyOrder error:", error);
+    res.status(status).json({ message: error.message || "Server error previewing order" });
   }
 };
 
@@ -348,6 +491,8 @@ export const adminPatchOrder = async (req, res) => {
     if (!isObjectId(id)) return res.status(400).json({ message: "Invalid order id" });
 
     const body = req.body || {};
+    const existingOrder = await Order.findById(id).select("_id user status appliedReward").lean();
+    if (!existingOrder) return res.status(404).json({ message: "Order not found" });
 
     const patch = {};
 
@@ -395,7 +540,25 @@ export const adminPatchOrder = async (req, res) => {
       .populate("delivery.pickupLocationId", "type city nameKey addressKey phone workingHours coordinates")
       .lean();
 
-    if (!updated) return res.status(404).json({ message: "Order not found" });
+    if (existingOrder.appliedReward?.rewardId) {
+      const rewardPayload = {
+        userId: existingOrder.user?._id || existingOrder.user,
+        rewardId: existingOrder.appliedReward.rewardId,
+        orderId: existingOrder._id,
+      };
+
+      if (existingOrder.status !== "cancelled" && updated.status === "cancelled") {
+        await restoreRewardFromOrder(rewardPayload);
+      }
+
+      if (existingOrder.status === "cancelled" && updated.status !== "cancelled") {
+        await markRewardUsedByOrder(rewardPayload);
+      }
+    }
+
+    if (existingOrder.user?._id || existingOrder.user) {
+      await syncUserCommerceData(existingOrder.user?._id || existingOrder.user);
+    }
 
     res.json(updated);
   } catch (error) {
@@ -414,6 +577,8 @@ export const adminCancelOrder = async (req, res) => {
     if (!isObjectId(id)) return res.status(400).json({ message: "Invalid order id" });
 
     const note = pickStr(req.body?.note || req.body?.reason || "");
+    const existingOrder = await Order.findById(id).select("_id user status appliedReward").lean();
+    if (!existingOrder) return res.status(404).json({ message: "Order not found" });
 
     const updated = await Order.findByIdAndUpdate(
       id,
@@ -429,7 +594,17 @@ export const adminCancelOrder = async (req, res) => {
       .populate("user", "name email")
       .lean();
 
-    if (!updated) return res.status(404).json({ message: "Order not found" });
+    if (existingOrder.appliedReward?.rewardId && existingOrder.status !== "cancelled") {
+      await restoreRewardFromOrder({
+        userId: existingOrder.user?._id || existingOrder.user,
+        rewardId: existingOrder.appliedReward.rewardId,
+        orderId: existingOrder._id,
+      });
+    }
+
+    if (existingOrder.user?._id || existingOrder.user) {
+      await syncUserCommerceData(existingOrder.user?._id || existingOrder.user);
+    }
 
     // if adminNote is undefined, mongoose won't remove old value. That’s ok.
     // If you want to clear adminNote when empty, handle it via PATCH.
@@ -450,11 +625,21 @@ export const adminDeleteOrder = async (req, res) => {
     const { id } = req.params;
     if (!isObjectId(id)) return res.status(400).json({ message: "Invalid order id" });
 
-    const order = await Order.findById(id).select("_id user").lean();
+    const order = await Order.findById(id).select("_id user appliedReward").lean();
     if (!order) return res.status(404).json({ message: "Order not found" });
 
     await Order.deleteOne({ _id: id });
     await User.updateOne({ _id: order.user }, { $pull: { orders: order._id } });
+    if (order.appliedReward?.rewardId) {
+      await restoreRewardFromOrder({
+        userId: order.user,
+        rewardId: order.appliedReward.rewardId,
+        orderId: order._id,
+      });
+    }
+    if (order.user) {
+      await syncUserCommerceData(order.user);
+    }
 
     res.json({ ok: true });
   } catch (error) {
