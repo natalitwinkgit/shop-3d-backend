@@ -4,7 +4,7 @@ import fs from "fs";
 import multer from "multer";
 import bcrypt from "bcryptjs";
 
-import { protect, admin } from "../middleware/authMiddleware.js";
+import { protect, admin, requireSuperadmin } from "../middleware/authMiddleware.js";
 import {
   adminListOrders,
   adminGetOrder,
@@ -31,7 +31,14 @@ import adminAiRoutes from "./adminAiRoutes.js";
 
 import Product from "../models/Product.js";
 import Category from "../models/Category.js";
-import User from "../models/userModel.js";
+import User, {
+  ADMIN_ROLES,
+  USER_ROLES,
+  USER_STATUSES,
+  isAdminRole,
+  isValidPhone,
+  normalizePhone,
+} from "../models/userModel.js";
 import Message from "../models/Message.js";
 import SpecTemplate from "../models/SpecTemplate.js";
 import SpecField from "../models/SpecField.js";
@@ -43,7 +50,9 @@ import {
   getAdminUserDetail,
   listAdminUserOrders,
   listAdminUsersData,
-  normalizeUserPhone,
+  splitUserName,
+  normalizeUserRole,
+  normalizeUserStatus,
   syncUserCommerceData,
   updateUserLoyaltySettings,
   updateUserReward,
@@ -94,7 +103,7 @@ const upload = multer({
 const isObjectIdLike = (value) => /^[a-f0-9]{24}$/i.test(String(value || ""));
 
 const loadAdminIndex = async () => {
-  const admins = await User.find({ role: "admin" })
+  const admins = await User.find({ role: { $in: ADMIN_ROLES } })
     .select("_id name email role")
     .lean();
 
@@ -112,6 +121,64 @@ const loadAdminIndex = async () => {
   );
 
   return { admins, adminIds, adminSet, adminMap };
+};
+
+const ensureEmailIsUnique = async ({ email, excludeUserId = null }) => {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  if (!normalizedEmail) return;
+
+  const existing = await User.findOne({
+    email: normalizedEmail,
+    ...(excludeUserId ? { _id: { $ne: excludeUserId } } : {}),
+  }).lean();
+
+  if (existing) {
+    const err = new Error("User with this email already exists");
+    err.statusCode = 409;
+    throw err;
+  }
+};
+
+const ensurePhoneIsUnique = async ({ phone, excludeUserId = null }) => {
+  const normalizedPhone = normalizePhone(phone);
+  if (!normalizedPhone) return "";
+
+  const existing = await User.findOne({
+    phoneNormalized: normalizedPhone,
+    ...(excludeUserId ? { _id: { $ne: excludeUserId } } : {}),
+  }).lean();
+
+  if (existing) {
+    const err = new Error("User with this phone already exists");
+    err.statusCode = 409;
+    throw err;
+  }
+
+  return normalizedPhone;
+};
+
+const assertActorCanManageUserProfile = (actor, targetUser) => {
+  if (String(actor?._id || actor?.id || "") === String(targetUser?._id || "")) {
+    return;
+  }
+
+  if (!isAdminRole(actor?.role)) {
+    const err = new Error("Forbidden");
+    err.statusCode = 403;
+    throw err;
+  }
+
+  if (targetUser?.role === "superadmin" && actor?.role !== "superadmin") {
+    const err = new Error("Only superadmin can manage superadmin users");
+    err.statusCode = 403;
+    throw err;
+  }
+
+  if (isAdminRole(targetUser?.role) && actor?.role !== "superadmin") {
+    const err = new Error("Only superadmin can manage admin users");
+    err.statusCode = 403;
+    throw err;
+  }
 };
 
 const loadUserNameMap = async (ids) => {
@@ -361,7 +428,9 @@ const getSupportAdmin = async (req, res) => {
       });
     }
 
-    const firstAdmin = await User.findOne({ role: "admin" }).select("_id name email").lean();
+    const firstAdmin = await User.findOne({ role: { $in: ADMIN_ROLES } })
+      .select("_id name email")
+      .lean();
     if (!firstAdmin) return res.status(404).json({ message: "No admin found" });
 
     return res.json({
@@ -398,6 +467,133 @@ const getAdminDashboard = async (req, res) => {
   } catch (e) {
     console.error("[ADMIN dashboard]", e);
     res.status(500).json({ message: "Помилка сервера" });
+  }
+};
+
+const createAdminUserHandler = async (req, res) => {
+  try {
+    const firstName = String(req.body?.firstName || "").trim();
+    const lastName = String(req.body?.lastName || "").trim();
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    const phone = normalizePhone(req.body?.phone);
+    const password = String(req.body?.password || "");
+    const role = normalizeUserRole(req.body?.role, "user");
+    const status = normalizeUserStatus(req.body?.status, "active");
+    const city = String(req.body?.city || "").trim();
+
+    if (!firstName || !email || !phone || !password) {
+      return res.status(400).json({
+        message: "firstName, email, phone and password are required",
+      });
+    }
+
+    if (!USER_ROLES.includes(role)) {
+      return res.status(400).json({ message: "Invalid role" });
+    }
+
+    if (!USER_STATUSES.includes(status)) {
+      return res.status(400).json({ message: "Invalid status" });
+    }
+
+    if (!isValidPhone(phone)) {
+      return res.status(400).json({ message: "Invalid phone number" });
+    }
+
+    await ensureEmailIsUnique({ email });
+    const phoneNormalized = await ensurePhoneIsUnique({ phone });
+
+    const name = `${firstName} ${String(lastName || "").trim()}`.trim();
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    const user = await User.create({
+      name,
+      email,
+      phone,
+      phoneNormalized,
+      passwordHash,
+      role,
+      status,
+      city,
+      createdBy: req.user?._id || null,
+      updatedBy: req.user?._id || null,
+    });
+
+    const synced = await syncUserCommerceData(user._id);
+    return res.status(201).json(synced || buildPublicUserResponse(user));
+  } catch (error) {
+    console.error("[ADMIN users POST]", error);
+    return res.status(error.statusCode || 400).json({
+      message: error.message || "Create user failed",
+    });
+  }
+};
+
+const patchAdminUserProfileHandler = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    assertActorCanManageUserProfile(req.user, user);
+
+    if (req.body?.role !== undefined || req.body?.status !== undefined) {
+      return res.status(400).json({
+        message: "Use dedicated role/status endpoints",
+      });
+    }
+
+    const firstNameProvided = req.body?.firstName !== undefined;
+    const lastNameProvided = req.body?.lastName !== undefined;
+    if (firstNameProvided || lastNameProvided) {
+      const currentParts = splitUserName(user.name);
+      const firstName = firstNameProvided
+        ? String(req.body?.firstName || "").trim()
+        : currentParts.firstName;
+      const lastName = lastNameProvided
+        ? String(req.body?.lastName || "").trim()
+        : currentParts.lastName;
+      user.name = `${firstName} ${lastName}`.trim();
+    }
+
+    if (req.body?.email !== undefined) {
+      const email = String(req.body.email || "").trim().toLowerCase();
+      if (!email) {
+        return res.status(400).json({ message: "Email cannot be empty" });
+      }
+      await ensureEmailIsUnique({ email, excludeUserId: user._id });
+      user.email = email;
+    }
+
+    if (req.body?.phone !== undefined) {
+      const phone = normalizePhone(req.body.phone);
+      if (!isValidPhone(phone)) {
+        return res.status(400).json({ message: "Invalid phone number" });
+      }
+      const phoneNormalized = await ensurePhoneIsUnique({
+        phone,
+        excludeUserId: user._id,
+      });
+      user.phone = phone;
+      user.phoneNormalized = phoneNormalized;
+    }
+
+    if (req.body?.city !== undefined) {
+      user.city = String(req.body.city || "").trim();
+    }
+
+    if (typeof req.body?.password === "string" && req.body.password.trim()) {
+      user.passwordHash = await bcrypt.hash(req.body.password.trim(), 10);
+    }
+
+    user.updatedBy = req.user?._id || null;
+    await user.save();
+
+    const synced = await syncUserCommerceData(user._id);
+    return res.json(synced || buildPublicUserResponse(user));
+  } catch (error) {
+    console.error("[ADMIN users PATCH]", error);
+    return res.status(error.statusCode || 400).json({
+      message: error.message || "Update user failed",
+    });
   }
 };
 
@@ -747,35 +943,7 @@ router.get("/users", async (req, res) => {
   }
 });
 
-router.post("/users", async (req, res) => {
-  try {
-    const { firstName, lastName, email, phone, role, status, password } = req.body || {};
-    if (!email || !firstName || !password) {
-      return res.status(400).json({ message: "Email, firstName and password are required" });
-    }
-
-    const exists = await User.findOne({ email: String(email).toLowerCase().trim() });
-    if (exists) return res.status(400).json({ message: "Email already exists" });
-
-    const name = `${String(firstName || "").trim()} ${String(lastName || "").trim()}`.trim();
-    const hashed = await bcrypt.hash(String(password), 10);
-
-    const user = await User.create({
-      name,
-      email: String(email).toLowerCase().trim(),
-      phone: normalizeUserPhone(phone),
-      password: hashed,
-      role: role || "user",
-      status: status || "active",
-    });
-
-    const synced = await syncUserCommerceData(user._id);
-    res.status(201).json(synced || buildPublicUserResponse(user));
-  } catch (e) {
-    console.error("[ADMIN users POST]", e);
-    res.status(400).json({ message: "Create user failed" });
-  }
-});
+router.post("/users", requireSuperadmin, createAdminUserHandler);
 
 router.get("/users/:id", async (req, res) => {
   try {
@@ -801,6 +969,10 @@ router.get("/users/:id/orders", async (req, res) => {
 
 router.patch("/users/:id/loyalty", async (req, res) => {
   try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+    assertActorCanManageUserProfile(req.user, user);
+
     await updateUserLoyaltySettings(req.params.id, req.body || {});
     const detail = await getAdminUserDetail(req.params.id);
     res.json(detail.user);
@@ -811,6 +983,10 @@ router.patch("/users/:id/loyalty", async (req, res) => {
 
 router.post("/users/:id/rewards", async (req, res) => {
   try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+    assertActorCanManageUserProfile(req.user, user);
+
     const rewards = await createUserReward(req.params.id, req.body || {});
     res.status(201).json({ rewards });
   } catch (e) {
@@ -820,6 +996,10 @@ router.post("/users/:id/rewards", async (req, res) => {
 
 router.patch("/users/:id/rewards/:rewardId", async (req, res) => {
   try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+    assertActorCanManageUserProfile(req.user, user);
+
     const rewards = await updateUserReward(req.params.id, req.params.rewardId, req.body || {});
     res.json({ rewards });
   } catch (e) {
@@ -827,33 +1007,62 @@ router.patch("/users/:id/rewards/:rewardId", async (req, res) => {
   }
 });
 
-router.put("/users/:id", async (req, res) => {
+router.patch("/users/:id", patchAdminUserProfileHandler);
+router.put("/users/:id", patchAdminUserProfileHandler);
+
+router.patch("/users/:id/role", requireSuperadmin, async (req, res) => {
   try {
-    const { firstName, lastName, email, phone, role, status, password } = req.body || {};
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    if (typeof firstName === "string" || typeof lastName === "string") {
-      const name = `${String(firstName || "").trim()} ${String(lastName || "").trim()}`.trim();
-      if (name) user.name = name;
+    const role = normalizeUserRole(req.body?.role, "");
+    if (!role) {
+      return res.status(400).json({ message: "role is required" });
     }
 
-    if (typeof email === "string" && email.trim()) user.email = email.toLowerCase().trim();
-    if (phone !== undefined) user.phone = normalizeUserPhone(phone);
-    if (typeof role === "string" && role.trim()) user.role = role.trim();
-    if (typeof status === "string" && status.trim()) user.status = status.trim();
-
-    if (typeof password === "string" && password.trim()) {
-      user.password = await bcrypt.hash(password.trim(), 10);
+    if (!USER_ROLES.includes(role)) {
+      return res.status(400).json({ message: "Invalid role" });
     }
 
+    user.role = role;
+    user.updatedBy = req.user?._id || null;
     await user.save();
 
-    const synced = await syncUserCommerceData(user._id);
-    res.json(synced || buildPublicUserResponse(user));
-  } catch (e) {
-    console.error("[ADMIN users PUT]", e);
-    res.status(400).json({ message: "Update user failed" });
+    const detail = await getAdminUserDetail(user._id);
+    return res.json(detail.user);
+  } catch (error) {
+    console.error("[ADMIN users role PATCH]", error);
+    return res.status(error.statusCode || 400).json({
+      message: error.message || "Failed to update role",
+    });
+  }
+});
+
+router.patch("/users/:id/status", requireSuperadmin, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    const status = normalizeUserStatus(req.body?.status, "");
+    if (!status) {
+      return res.status(400).json({ message: "status is required" });
+    }
+
+    if (!USER_STATUSES.includes(status)) {
+      return res.status(400).json({ message: "Invalid status" });
+    }
+
+    user.status = status;
+    user.updatedBy = req.user?._id || null;
+    await user.save();
+
+    const detail = await getAdminUserDetail(user._id);
+    return res.json(detail.user);
+  } catch (error) {
+    console.error("[ADMIN users status PATCH]", error);
+    return res.status(error.statusCode || 400).json({
+      message: error.message || "Failed to update status",
+    });
   }
 });
 
@@ -862,10 +1071,12 @@ router.delete("/users/:id", async (req, res) => {
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ message: "User not found" });
 
+    assertActorCanManageUserProfile(req.user, user);
+
     await user.deleteOne();
     res.json({ ok: true });
   } catch (e) {
-    res.status(500).json({ message: "Delete user failed" });
+    res.status(e.statusCode || 500).json({ message: e.message || "Delete user failed" });
   }
 });
 

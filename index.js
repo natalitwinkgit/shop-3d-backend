@@ -37,6 +37,7 @@ import inventoryRoutes from "./routes/inventoryRoutes.js";
 
 import { createChatMessage, registerChatEmitter } from "./services/chatMessageService.js";
 import { ensureAiAdminUser } from "./services/aiAdminService.js";
+import { ensureSeedSuperadminUser } from "./services/userProfileService.js";
 
 // ESM __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -292,11 +293,24 @@ async function start() {
     await mongoose.connect(uri);
     console.log("✅ MongoDB connected");
 
+    try {
+      const superadminUser = await ensureSeedSuperadminUser();
+      if (superadminUser) {
+        console.log(
+          "✅ Superadmin ready:",
+          String(superadminUser.email || superadminUser._id)
+        );
+      }
+    } catch (bootstrapError) {
+      console.error("❌ Superadmin bootstrap error:", bootstrapError);
+    }
+
     const shouldBootstrapAiAdmin =
       Boolean(String(process.env.AI_ADMIN_EMAIL || "").trim()) ||
       Boolean(String(process.env.AI_ADMIN_NAME || "").trim()) ||
       Boolean(String(process.env.AI_ADMIN_PASSWORD || "").trim()) ||
-      Boolean(String(process.env.OPENAI_API_KEY || "").trim());
+      Boolean(String(process.env.OPENAI_API_KEY || "").trim()) ||
+      Boolean(String(process.env.GEMINI_API_KEY || "").trim());
 
     if (shouldBootstrapAiAdmin) {
       try {
