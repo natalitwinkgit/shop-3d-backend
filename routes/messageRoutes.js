@@ -1,12 +1,17 @@
 import express from "express";
 import { protect } from "../middleware/authMiddleware.js";
+import { isAdminRole } from "../models/userModel.js";
 import { getConversationHistory, markConversationRead } from "../services/adminChatService.js";
 
 const router = express.Router();
 
 const canAccessMessages = (req, firstId, secondId) => {
   const currentUserId = String(req.user?._id || req.user?.id || "");
-  return req.user?.role === "admin" || currentUserId === String(firstId) || currentUserId === String(secondId);
+  return (
+    isAdminRole(req.user?.role) ||
+    currentUserId === String(firstId) ||
+    currentUserId === String(secondId)
+  );
 };
 
 // Отримати історію повідомлень між двома користувачами

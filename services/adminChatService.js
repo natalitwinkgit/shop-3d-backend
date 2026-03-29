@@ -1,10 +1,10 @@
 import Message from "../models/Message.js";
-import User from "../models/userModel.js";
+import User, { ADMIN_ROLES, isAdminRole } from "../models/userModel.js";
 
 export const isObjectIdLike = (value) => /^[a-f0-9]{24}$/i.test(String(value || ""));
 
 export const loadAdminIndex = async () => {
-  const admins = await User.find({ role: "admin" })
+  const admins = await User.find({ role: { $in: ADMIN_ROLES } })
     .select("_id name email role isAiAssistant")
     .lean();
 
@@ -232,7 +232,7 @@ export const buildAdminConversationSummaries = async () => {
 
 export const getSupportAdminProfile = async ({ currentUser } = {}) => {
   const currentAdminId = String(currentUser?._id || currentUser?.id || "");
-  if (currentUser?.role === "admin" && currentAdminId) {
+  if (isAdminRole(currentUser?.role) && currentAdminId) {
     return {
       adminId: currentAdminId,
       adminName: currentUser.name || currentUser.email || "Admin",
@@ -245,10 +245,10 @@ export const getSupportAdminProfile = async ({ currentUser } = {}) => {
   const supportEmail = String(process.env.SUPPORT_ADMIN_EMAIL || "").trim();
 
   const candidates = [];
-  if (aiEmail) candidates.push({ email: aiEmail, role: "admin" });
-  candidates.push({ role: "admin", isAiAssistant: true });
-  if (supportEmail) candidates.push({ email: supportEmail, role: "admin" });
-  candidates.push({ role: "admin" });
+  if (aiEmail) candidates.push({ email: aiEmail, role: { $in: ADMIN_ROLES } });
+  candidates.push({ role: { $in: ADMIN_ROLES }, isAiAssistant: true });
+  if (supportEmail) candidates.push({ email: supportEmail, role: { $in: ADMIN_ROLES } });
+  candidates.push({ role: { $in: ADMIN_ROLES } });
 
   for (const query of candidates) {
     const adminUser = await User.findOne(query).select("_id name email isAiAssistant").lean();

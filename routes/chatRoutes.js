@@ -1,6 +1,7 @@
 // server/routes/chatRoutes.js
 import express from "express";
 import { protect } from "../middleware/authMiddleware.js";
+import { isAdminRole } from "../models/userModel.js";
 import {
   getConversationHistory,
   getSupportAdminProfile,
@@ -11,7 +12,11 @@ const router = express.Router();
 
 const canAccessChat = (req, firstId, secondId) => {
   const currentUserId = String(req.user?._id || req.user?.id || "");
-  return req.user?.role === "admin" || currentUserId === String(firstId) || currentUserId === String(secondId);
+  return (
+    isAdminRole(req.user?.role) ||
+    currentUserId === String(firstId) ||
+    currentUserId === String(secondId)
+  );
 };
 
 router.get("/admin-id", async (req, res) => {

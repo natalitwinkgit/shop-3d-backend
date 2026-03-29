@@ -6,7 +6,12 @@ import Inventory from "../models/Inventory.js";
 import Location from "../models/Location.js";
 import Order from "../models/Order.js";
 import Product from "../models/Product.js";
-import User from "../models/userModel.js";
+import User, {
+  ADMIN_ROLES,
+  getStoredPasswordHash,
+  isAdminRole,
+  normalizePhone,
+} from "../models/userModel.js";
 import { getExternalConversationHistory, loadAdminIndex } from "./adminChatService.js";
 import { createChatMessage } from "./chatMessageService.js";
 
@@ -33,8 +38,6 @@ const pickStr = (value) => String(value ?? "").trim();
 const escapeRegex = (value) => String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const isObjectIdLike = (value) => /^[a-f0-9]{24}$/i.test(String(value || ""));
-
-const normalizePhone = (value) => String(value || "").replace(/[^\d+]/g, "").trim();
 
 const normalizeNumberFromText = (value) => {
   const digits = String(value || "").replace(/[^\d]/g, "");
@@ -511,20 +514,43 @@ export const ensureAiAdminUser = async () => {
   const preferredEmail = pickStr(process.env.AI_ADMIN_EMAIL);
   const preferredName = pickStr(process.env.AI_ADMIN_NAME) || "AI Support";
   const preferredPassword = pickStr(process.env.AI_ADMIN_PASSWORD);
+  const fallbackPhoneDigits = crypto
+    .createHash("md5")
+    .update(preferredEmail || preferredName)
+    .digest("hex")
+    .replace(/[a-f]/gi, "1")
+    .slice(0, 9);
+  const preferredPhone = normalizePhone(
+    process.env.AI_ADMIN_PHONE || `+999${fallbackPhoneDigits}`
+  );
 
   if (preferredEmail) {
-    const existingByEmail = await User.findOne({ email: preferredEmail }).select("+password");
+    const existingByEmail = await User.findOne({ email: preferredEmail }).select(
+      "+passwordHash +password"
+    );
     if (existingByEmail) {
-      if (existingByEmail.role !== "admin") existingByEmail.role = "admin";
+      if (!isAdminRole(existingByEmail.role)) existingByEmail.role = "admin";
       if (existingByEmail.status !== "active") existingByEmail.status = "active";
       if (!existingByEmail.isAiAssistant) existingByEmail.isAiAssistant = true;
       if (!existingByEmail.name) existingByEmail.name = preferredName;
+      if (!existingByEmail.phone) existingByEmail.phone = preferredPhone;
+      if (!existingByEmail.phoneNormalized) {
+        existingByEmail.phoneNormalized = normalizePhone(existingByEmail.phone || preferredPhone);
+      }
+      if (!existingByEmail.passwordHash) {
+        existingByEmail.passwordHash =
+          getStoredPasswordHash(existingByEmail) ||
+          (await bcrypt.hash(preferredPassword || crypto.randomBytes(24).toString("hex"), 10));
+      }
       await existingByEmail.save();
       return existingByEmail;
     }
   }
 
-  const existingAiUser = await User.findOne({ role: "admin", isAiAssistant: true }).select("+password");
+  const existingAiUser = await User.findOne({
+    role: { $in: ADMIN_ROLES },
+    isAiAssistant: true,
+  }).select("+passwordHash +password");
   if (existingAiUser) return existingAiUser;
 
   const randomPassword = preferredPassword || crypto.randomBytes(24).toString("hex");
@@ -533,7 +559,9 @@ export const ensureAiAdminUser = async () => {
   const aiUser = await User.create({
     name: preferredName,
     email: preferredEmail || "ai-support@shop3d.local",
-    password: hashedPassword,
+    phone: preferredPhone,
+    phoneNormalized: preferredPhone,
+    passwordHash: hashedPassword,
     role: "admin",
     status: "active",
     isAiAssistant: true,
@@ -574,7 +602,7 @@ const findChatUser = async (externalUserId) => {
     throw err;
   }
 
-  if (userDoc.role === "admin") {
+  if (isAdminRole(userDoc.role)) {
     const err = new Error("AI admin only supports customer and guest chats");
     err.statusCode = 400;
     throw err;
@@ -586,7 +614,7 @@ const findChatUser = async (externalUserId) => {
     isGuest: false,
     name: userDoc.name || userDoc.email || "User",
     email: userDoc.email || "",
-    phone: "",
+    phone: userDoc.phone || "",
     status: userDoc.status || "active",
   };
 };
@@ -1130,7 +1158,9 @@ const buildAiTools = ({ sendEnabled }) => {
 
 export const getAiAdminStatus = async () => {
   const aiUser =
-    (await User.findOne({ role: "admin", isAiAssistant: true }).select("_id name email").lean()) || null;
+    (await User.findOne({ role: { $in: ADMIN_ROLES }, isAiAssistant: true })
+      .select("_id name email")
+      .lean()) || null;
   const provider = getAiProvider();
 
   return {
