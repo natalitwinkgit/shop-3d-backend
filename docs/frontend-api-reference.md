@@ -39,11 +39,13 @@ Source of truth: current mounted routes in `index.js` and route definitions in `
   {
     "name": "User Name",
     "email": "user@example.com",
+    "phone": "+380991112233",
     "password": "secret123",
-    "role": "user"
+    "confirmPassword": "secret123"
   }
   ```
   - response: `{ user, token }`
+  - role is always created as `user`
 
 - `POST /api/auth/login`
   - body:
@@ -127,38 +129,52 @@ Source of truth: current mounted routes in `index.js` and route definitions in `
 ### Current User / Presence
 
 - `GET /api/auth/me`
-  - returns public user object:
+  - returns:
   ```json
   {
-    "id": "user_id",
-    "firstName": "Ivan",
-    "lastName": "Petrenko",
-    "name": "Ivan Petrenko",
-    "email": "ivan@example.com",
-    "phone": "+380...",
-    "role": "user",
-    "status": "active",
-    "isOnline": true,
-    "presence": "online",
-    "lastSeen": "2026-03-27T12:00:00.000Z",
-    "loyalty": {
-      "cardNumber": "DC-00001234",
-      "tier": "silver",
-      "baseDiscountPct": 3,
-      "totalSpent": 25000,
-      "completedOrders": 4,
-      "lastOrderAt": null,
-      "notes": "",
-      "manualOverride": false
-    },
-    "rewards": [],
-    "rewardsSummary": {
-      "active": 0,
-      "used": 0,
-      "expired": 0
+    "user": {
+      "id": "user_id",
+      "firstName": "Ivan",
+      "lastName": "Petrenko",
+      "name": "Ivan Petrenko",
+      "email": "ivan@example.com",
+      "phone": "+380...",
+      "city": "Kyiv",
+      "role": "user",
+      "status": "active",
+      "isOnline": true,
+      "presence": "online",
+      "lastSeen": "2026-03-27T12:00:00.000Z",
+      "loyalty": {
+        "cardNumber": "DC-00001234",
+        "tier": "silver",
+        "baseDiscountPct": 3,
+        "totalSpent": 25000,
+        "completedOrders": 4,
+        "lastOrderAt": null,
+        "notes": "",
+        "manualOverride": false
+      },
+      "rewards": [],
+      "rewardsSummary": {
+        "active": 0,
+        "used": 0,
+        "expired": 0
+      }
     }
   }
   ```
+
+- `PATCH /api/auth/me`
+  - allowed body fields:
+  ```json
+  {
+    "name": "New Name",
+    "phone": "+380991112233",
+    "city": "Kyiv"
+  }
+  ```
+  - `role` and `status` are not editable here
 
 - `POST /api/auth/logout`
   - body:
@@ -337,6 +353,7 @@ Authorization: Bearer <admin_token>
 ```
 
 Use `/api/admin/*` as the main frontend namespace.
+Admin area is available for `admin` and `superadmin`, but only `superadmin` can create admins or change user roles/statuses.
 
 ### Dashboard
 
@@ -454,8 +471,19 @@ Child category body:
 - `PATCH /api/admin/users/:id/loyalty`
 - `POST /api/admin/users/:id/rewards`
 - `PATCH /api/admin/users/:id/rewards/:rewardId`
+- `PATCH /api/admin/users/:id`
 - `PUT /api/admin/users/:id`
+- `PATCH /api/admin/users/:id/role`
+- `PATCH /api/admin/users/:id/status`
 - `DELETE /api/admin/users/:id`
+
+Permissions:
+
+- `GET /api/admin/users` -> `admin`, `superadmin`
+- `POST /api/admin/users` -> only `superadmin`
+- `PATCH /api/admin/users/:id` -> `admin`, `superadmin`
+- `PATCH /api/admin/users/:id/role` -> only `superadmin`
+- `PATCH /api/admin/users/:id/status` -> only `superadmin`
 
 Create/update user body:
 
@@ -465,6 +493,7 @@ Create/update user body:
   "lastName": "Petrenko",
   "email": "ivan@example.com",
   "phone": "+380991112233",
+  "city": "Kyiv",
   "role": "user",
   "status": "active",
   "password": "secret123"
@@ -504,6 +533,22 @@ Reward patch body example:
   "status": "cancelled",
   "title": "Updated title",
   "expiresAt": "2026-05-31T23:59:59.000Z"
+}
+```
+
+Role patch body:
+
+```json
+{
+  "role": "admin"
+}
+```
+
+Status patch body:
+
+```json
+{
+  "status": "banned"
 }
 ```
 
@@ -773,4 +818,3 @@ Payload contains the saved message from DB plus aliases:
   - `result.products` in AI response
   - `message.meta.productCards` in chat history/socket payload
 - Use `storefrontUrl` if backend sends absolute storefront link for product cards.
-

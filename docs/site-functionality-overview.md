@@ -8,8 +8,10 @@ Purpose: short functional description of the current website and admin system, s
 ### Authentication
 
 - Users can register and log in with email and password.
+- Public registration creates only a regular `user` account.
 - The site supports session restoration through token-based auth.
 - The system can return the current authorized user profile.
+- The current user can update own `name`, `phone`, and `city` without access to role management.
 - Logout is tracked on the backend, so user activity state can be updated correctly.
 
 ### Product Catalog
@@ -118,7 +120,9 @@ Purpose: short functional description of the current website and admin system, s
 
 - Admins can list users and open a specific user profile.
 - User cards include profile data, presence state, loyalty data, rewards summary, and order summary.
-- Admins can create, update, and delete users.
+- `admin` and `superadmin` can work inside the admin panel.
+- Only `superadmin` can create admin accounts and manage user roles/statuses.
+- Admins can create, update, and delete regular users within the allowed permission rules.
 - Admins can open user order history directly from the CRM area.
 
 ### Loyalty and Retention Tools
@@ -302,4 +306,3 @@ Please answer as a product architect for an e-commerce furniture company.
 - Use this file when discussing product ideas and business logic.
 - Use `docs/frontend-api-reference.md` when discussing exact frontend integration and endpoint contracts.
 - Use both files together when asking GPT to design the next roadmap.
-
