@@ -1,83 +1,93 @@
 import jwt from "jsonwebtoken";
-import User from "../models/userModel.js";
+import User, { ADMIN_ROLES, isAdminRole } from "../models/userModel.js";
 
 const getTokenFromReq = (req) => {
-  // 1) Authorization: Bearer <token>
   const auth = req.headers.authorization;
   if (auth && auth.startsWith("Bearer ")) return auth.split(" ")[1];
 
-  // 2) Cookie fallback (підстав назву cookie якщо інша)
-  // популярні варіанти: token / jwt
   const cookieToken = req.cookies?.token || req.cookies?.jwt || null;
   if (cookieToken) return cookieToken;
 
   return null;
 };
 
-export const protect = async (req, res, next) => {
+const touchPresenceIfNeeded = async (user) => {
+  const now = new Date();
+  const lastSeenTs = new Date(user.lastSeen || 0).getTime();
+  const shouldTouchPresence =
+    !user.isOnline || !lastSeenTs || now.getTime() - lastSeenTs > 30 * 1000;
+
+  if (!shouldTouchPresence) return user;
+
+  return User.findByIdAndUpdate(
+    user._id,
+    {
+      $set: {
+        isOnline: true,
+        presence: "online",
+        lastSeen: now,
+        lastActivityAt: now,
+      },
+    },
+    { new: true }
+  ).select("-passwordHash -password");
+};
+
+export const requireAuth = async (req, res, next) => {
   try {
     const token = getTokenFromReq(req);
-
-    if (token) {
-      console.log("[AUTH] Token found.");
-    } else {
-      console.warn("[AUTH WARNING] No token.");
-      return res.status(401).json({ message: "Не авторизовано, токен відсутній" });
+    if (!token) {
+      return res.status(401).json({ message: "Unauthorized" });
     }
 
     if (!process.env.JWT_SECRET) {
-      console.error("[AUTH FATAL] JWT_SECRET missing");
-      return res.status(500).json({ message: "JWT_SECRET не встановлено" });
+      return res.status(500).json({ message: "JWT_SECRET is not configured" });
     }
 
     let decoded;
     try {
       decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch (err) {
-      if (err?.name === "TokenExpiredError") {
-        return res.status(401).json({ message: "Токен прострочено" });
+    } catch (error) {
+      if (error?.name === "TokenExpiredError") {
+        return res.status(401).json({ message: "Token expired" });
       }
-      if (err?.name === "JsonWebTokenError") {
-        return res.status(401).json({ message: "Токен недійсний" });
-      }
-      console.error("[AUTH FATAL] jwt.verify error:", err);
-      return res.status(401).json({ message: "Не авторизовано" });
+      return res.status(401).json({ message: "Invalid token" });
     }
 
-    console.log(`[AUTH] Token verified. User ID: ${decoded.id}`);
-
-    const user = await User.findById(decoded.id).select("-password");
+    const user = await User.findById(decoded.id).select("-passwordHash -password");
     if (!user) {
-      console.error("[AUTH ERROR] User not found.");
-      return res.status(401).json({ message: "Не авторизовано, користувач не знайдений" });
+      return res.status(401).json({ message: "Unauthorized" });
     }
 
-    if (user.isBlocked || user.status === "banned") {
-      return res.status(403).json({ message: "Користувача заблоковано" });
+    if (user.status === "banned") {
+      return res.status(403).json({ message: "User is banned" });
     }
 
-    const now = new Date();
-    const lastSeenTs = new Date(user.lastSeen || 0).getTime();
-    const shouldTouchPresence =
-      !user.isOnline || !lastSeenTs || now.getTime() - lastSeenTs > 30 * 1000;
-
-    if (shouldTouchPresence) {
-      user.isOnline = true;
-      user.presence = "online";
-      user.lastSeen = now;
-      user.lastActivityAt = now;
-      await user.save();
-    }
-
-    req.user = user;
-    next();
-  } catch (err) {
-    console.error("[AUTH FATAL]", err);
-    return res.status(500).json({ message: "Помилка авторизації" });
+    req.user = await touchPresenceIfNeeded(user);
+    return next();
+  } catch (error) {
+    console.error("[AUTH]", error);
+    return res.status(500).json({ message: "Authorization error" });
   }
 };
 
-export const admin = (req, res, next) => {
-  if (req.user?.role === "admin") return next();
-  return res.status(403).json({ message: "Доступ лише для адміністратора" });
-};
+export const requireRole =
+  (...roles) =>
+  (req, res, next) => {
+    if (!req.user) return res.status(401).json({ message: "Unauthorized" });
+
+    const normalizedRoles = roles.map((role) => String(role || "").trim().toLowerCase());
+    if (!normalizedRoles.includes(String(req.user.role || "").trim().toLowerCase())) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
+    return next();
+  };
+
+export const requireAdmin = requireRole(...ADMIN_ROLES);
+export const requireSuperadmin = requireRole("superadmin");
+
+export const protect = requireAuth;
+export const admin = requireAdmin;
+
+export { isAdminRole };

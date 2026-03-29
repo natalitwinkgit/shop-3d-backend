@@ -3,6 +3,7 @@ import {
   registerUser, 
   loginUser, 
   getMe,
+  updateMe,
   logoutUser,
   forgotPassword,    // Якщо є
   resetPassword      // Якщо є
@@ -15,6 +16,7 @@ const router = express.Router();
 router.post("/register", registerUser);
 router.post("/login", loginUser);
 router.get("/me", protect, getMe);
+router.patch("/me", protect, updateMe);
 router.post("/logout", protect, logoutUser);
 
 // Якщо є маршрути для скидання пароля
