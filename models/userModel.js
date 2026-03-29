@@ -1,178 +1,270 @@
 // server/models/userModel.js
 import mongoose from "mongoose";
 
-const likeSchema = new mongoose.Schema({
-  productId: { type: String, required: true },
-  productName: { ua: { type: String, default: "" }, en: { type: String, default: "" } },
-  productCategory: { type: String, default: "" },
-  productImage: { type: String, default: "" },
-  discount: { type: Number, default: 0 },
-  price: { type: Number, default: 0 },
-}, { _id: false });
+export const USER_ROLES = ["user", "admin", "superadmin"];
+export const ADMIN_ROLES = ["admin", "superadmin"];
+export const USER_STATUSES = ["active", "banned"];
 
-/* ✅ Order items snapshot */
-const orderItemSchema = new mongoose.Schema({
-  productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product", required: true },
+export const normalizePhone = (value) =>
+  String(value || "").replace(/[^\d+]/g, "").trim();
 
-  // snapshot for history
-  sku: { type: String, default: "" },
-  name: {
-    ua: { type: String, default: "" },
-    en: { type: String, default: "" },
+export const isValidPhone = (value) =>
+  normalizePhone(value).replace(/\D/g, "").length >= 10;
+
+export const isAdminRole = (role) =>
+  ADMIN_ROLES.includes(String(role || "").trim().toLowerCase());
+
+export const getStoredPasswordHash = (userDoc) =>
+  String(userDoc?.passwordHash || userDoc?.password || "");
+
+const likeSchema = new mongoose.Schema(
+  {
+    productId: { type: String, required: true },
+    productName: { ua: { type: String, default: "" }, en: { type: String, default: "" } },
+    productCategory: { type: String, default: "" },
+    productImage: { type: String, default: "" },
+    discount: { type: Number, default: 0 },
+    price: { type: Number, default: 0 },
   },
-  image: { type: String, default: "" },
-  category: { type: String, default: "" },
-  subCategory: { type: String, default: "" },
+  { _id: false }
+);
 
-  qty: { type: Number, required: true, min: 1 },
-
-  // computed server-side
-  unitPrice: { type: Number, required: true, min: 0 },      // price after discount
-  discountPct: { type: Number, default: 0, min: 0, max: 100 },
-  lineTotal: { type: Number, required: true, min: 0 },
-}, { _id: false });
-
-const orderSchema = new mongoose.Schema({
-  status: {
-    type: String,
-    enum: ["new", "confirmed", "processing", "shipped", "completed", "cancelled"],
-    default: "new",
+const orderItemSchema = new mongoose.Schema(
+  {
+    productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product", required: true },
+    sku: { type: String, default: "" },
+    name: {
+      ua: { type: String, default: "" },
+      en: { type: String, default: "" },
+    },
+    image: { type: String, default: "" },
+    category: { type: String, default: "" },
+    subCategory: { type: String, default: "" },
+    qty: { type: Number, required: true, min: 1 },
+    unitPrice: { type: Number, required: true, min: 0 },
+    discountPct: { type: Number, default: 0, min: 0, max: 100 },
+    lineTotal: { type: Number, required: true, min: 0 },
   },
+  { _id: false }
+);
 
-  customer: {
-    fullName: { type: String, required: true },
-phone: {
-  type: String,
-  default: null,
-  trim: true,
-}
-,    email: { type: String, default: "" },
+const orderSchema = new mongoose.Schema(
+  {
+    status: {
+      type: String,
+      enum: ["new", "confirmed", "processing", "shipped", "completed", "cancelled"],
+      default: "new",
+    },
+    customer: {
+      fullName: { type: String, required: true },
+      phone: { type: String, default: null, trim: true },
+      email: { type: String, default: "" },
+    },
+    delivery: {
+      method: { type: String, enum: ["pickup", "courier", "nova_poshta"], required: true },
+      city: { type: String, required: true },
+      pickupLocationId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Location",
+        default: null,
+      },
+      address: { type: String, default: "" },
+      npOffice: { type: String, default: "" },
+    },
+    items: { type: [orderItemSchema], default: [] },
+    totals: {
+      subtotal: { type: Number, default: 0 },
+      loyaltyDiscount: { type: Number, default: 0 },
+      rewardDiscount: { type: Number, default: 0 },
+      discountTotal: { type: Number, default: 0 },
+      totalSavings: { type: Number, default: 0 },
+      cartTotal: { type: Number, default: 0 },
+      currency: { type: String, default: "UAH" },
+    },
+    loyaltySnapshot: {
+      cardNumber: { type: String, default: "" },
+      tier: { type: String, default: "none" },
+      baseDiscountPct: { type: Number, default: 0 },
+    },
+    appliedReward: {
+      rewardId: { type: String, default: "" },
+      type: { type: String, default: "" },
+      title: { type: String, default: "" },
+      discountPct: { type: Number, default: 0 },
+      amountOff: { type: Number, default: 0 },
+      minOrderTotal: { type: Number, default: 0 },
+    },
+    comment: { type: String, default: "" },
+    adminNote: { type: String, default: "" },
+    scheduledAt: { type: Date, default: null },
+    cancelledAt: { type: Date, default: null },
+    cancelReason: { type: String, default: "" },
   },
+  { timestamps: true }
+);
 
-  delivery: {
-    method: { type: String, enum: ["pickup", "courier", "nova_poshta"], required: true },
-    city: { type: String, required: true },
-
-    // pickup
-    pickupLocationId: { type: mongoose.Schema.Types.ObjectId, ref: "Location", default: null },
-
-    // courier
-    address: { type: String, default: "" },
-
-    // nova_poshta
-    npOffice: { type: String, default: "" },
-  },
-
-  items: { type: [orderItemSchema], default: [] },
-
-  totals: {
-    subtotal: { type: Number, default: 0 },       // without discounts
-    loyaltyDiscount: { type: Number, default: 0 },
-    rewardDiscount: { type: Number, default: 0 },
-    discountTotal: { type: Number, default: 0 },  // subtotal - cartTotal
-    cartTotal: { type: Number, default: 0 },      // to pay
-    currency: { type: String, default: "UAH" },
-  },
-
-  loyaltySnapshot: {
-    cardNumber: { type: String, default: "" },
-    tier: { type: String, default: "none" },
-    baseDiscountPct: { type: Number, default: 0 },
-  },
-
-  appliedReward: {
-    rewardId: { type: String, default: "" },
-    type: { type: String, default: "" },
+const rewardSchema = new mongoose.Schema(
+  {
+    rewardId: {
+      type: String,
+      default: () => new mongoose.Types.ObjectId().toHexString(),
+    },
+    type: {
+      type: String,
+      enum: ["next_order_discount", "manual_discount"],
+      default: "next_order_discount",
+    },
     title: { type: String, default: "" },
-    discountPct: { type: Number, default: 0 },
-    amountOff: { type: Number, default: 0 },
-    minOrderTotal: { type: Number, default: 0 },
+    description: { type: String, default: "" },
+    discountPct: { type: Number, default: 0, min: 0, max: 100 },
+    amountOff: { type: Number, default: 0, min: 0 },
+    minOrderTotal: { type: Number, default: 0, min: 0 },
+    status: {
+      type: String,
+      enum: ["active", "used", "expired", "cancelled"],
+      default: "active",
+    },
+    issuedAt: { type: Date, default: Date.now },
+    expiresAt: { type: Date, default: null },
+    usedAt: { type: Date, default: null },
+    usedOrderId: { type: mongoose.Schema.Types.ObjectId, ref: "Order", default: null },
+    note: { type: String, default: "" },
   },
+  { _id: false }
+);
 
-  comment: { type: String, default: "" },
-
-  // admin fields
-  adminNote: { type: String, default: "" },
-  scheduledAt: { type: Date, default: null },
-
-  cancelledAt: { type: Date, default: null },
-  cancelReason: { type: String, default: "" },
-}, { timestamps: true });
-
-const rewardSchema = new mongoose.Schema({
-  rewardId: {
-    type: String,
-    default: () => new mongoose.Types.ObjectId().toHexString(),
+const loyaltySchema = new mongoose.Schema(
+  {
+    cardNumber: {
+      type: String,
+      default: () =>
+        `DC-${new mongoose.Types.ObjectId().toHexString().slice(-8).toUpperCase()}`,
+    },
+    tier: {
+      type: String,
+      enum: ["none", "silver", "gold", "platinum"],
+      default: "none",
+    },
+    baseDiscountPct: { type: Number, default: 0, min: 0, max: 100 },
+    totalSpent: { type: Number, default: 0, min: 0 },
+    completedOrders: { type: Number, default: 0, min: 0 },
+    lastOrderAt: { type: Date, default: null },
+    notes: { type: String, default: "" },
+    manualOverride: { type: Boolean, default: false },
   },
-  type: {
-    type: String,
-    enum: ["next_order_discount", "manual_discount"],
-    default: "next_order_discount",
+  { _id: false }
+);
+
+const userSchema = new mongoose.Schema(
+  {
+    name: { type: String, trim: true, default: "" },
+    email: {
+      type: String,
+      required: true,
+      trim: true,
+      lowercase: true,
+      unique: true,
+      index: true,
+    },
+    phone: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    phoneNormalized: {
+      type: String,
+      trim: true,
+      default: "",
+      index: true,
+    },
+    passwordHash: {
+      type: String,
+      default: "",
+      select: false,
+    },
+    password: {
+      type: String,
+      default: "",
+      select: false,
+    },
+    role: {
+      type: String,
+      enum: USER_ROLES,
+      default: "user",
+      index: true,
+    },
+    status: {
+      type: String,
+      enum: USER_STATUSES,
+      default: "active",
+      index: true,
+    },
+    city: { type: String, trim: true, default: "" },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    updatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    lastLoginAt: {
+      type: Date,
+      default: null,
+    },
+    isAiAssistant: { type: Boolean, default: false, index: true },
+    isOnline: { type: Boolean, default: false },
+    presence: {
+      type: String,
+      enum: ["online", "away", "offline"],
+      default: "offline",
+      index: true,
+    },
+    lastSeen: { type: Date, default: null },
+    lastActivityAt: { type: Date, default: null },
+    lastHeartbeatAt: { type: Date, default: null },
+    lastLogoutAt: { type: Date, default: null },
+    lastPage: { type: String, default: "" },
+    likes: [likeSchema],
+    orders: { type: [orderSchema], default: [] },
+    loyalty: { type: loyaltySchema, default: () => ({}) },
+    rewards: { type: [rewardSchema], default: [] },
+    resetCode: { type: String },
   },
-  title: { type: String, default: "" },
-  description: { type: String, default: "" },
-  discountPct: { type: Number, default: 0, min: 0, max: 100 },
-  amountOff: { type: Number, default: 0, min: 0 },
-  minOrderTotal: { type: Number, default: 0, min: 0 },
-  status: {
-    type: String,
-    enum: ["active", "used", "expired", "cancelled"],
-    default: "active",
-  },
-  issuedAt: { type: Date, default: Date.now },
-  expiresAt: { type: Date, default: null },
-  usedAt: { type: Date, default: null },
-  usedOrderId: { type: mongoose.Schema.Types.ObjectId, ref: "Order", default: null },
-  note: { type: String, default: "" },
-}, { _id: false });
+  { timestamps: true }
+);
 
-const loyaltySchema = new mongoose.Schema({
-  cardNumber: {
-    type: String,
-    default: () => `DC-${new mongoose.Types.ObjectId().toHexString().slice(-8).toUpperCase()}`,
-  },
-  tier: {
-    type: String,
-    enum: ["none", "silver", "gold", "platinum"],
-    default: "none",
-  },
-  baseDiscountPct: { type: Number, default: 0, min: 0, max: 100 },
-  totalSpent: { type: Number, default: 0, min: 0 },
-  completedOrders: { type: Number, default: 0, min: 0 },
-  lastOrderAt: { type: Date, default: null },
-  notes: { type: String, default: "" },
-  manualOverride: { type: Boolean, default: false },
-}, { _id: false });
+userSchema.index(
+  { phoneNormalized: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      phoneNormalized: { $type: "string", $gt: "" },
+    },
+  }
+);
 
-const userSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  email: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
-  phone: { type: String, default: "" },
+userSchema.pre("validate", function syncUserFields(next) {
+  this.email = String(this.email || "").trim().toLowerCase();
+  this.phone = normalizePhone(this.phone);
+  this.phoneNormalized = normalizePhone(this.phoneNormalized || this.phone);
 
-  role: { type: String, enum: ["user", "admin"], default: "user" },
-  status: { type: String, enum: ["active", "banned"], default: "active" },
-  isAiAssistant: { type: Boolean, default: false, index: true },
+  if (!this.passwordHash && this.password) {
+    this.passwordHash = this.password;
+  }
 
-  isOnline: { type: Boolean, default: false },
-  presence: { type: String, enum: ["online", "away", "offline"], default: "offline", index: true },
-  lastSeen: { type: Date, default: Date.now },
-  lastActivityAt: { type: Date, default: Date.now },
-  lastHeartbeatAt: { type: Date, default: null },
-  lastLoginAt: { type: Date, default: null },
-  lastLogoutAt: { type: Date, default: null },
-  lastPage: { type: String, default: "" },
+  if (!this.loyalty?.cardNumber) {
+    this.loyalty = {
+      ...(this.loyalty?.toObject ? this.loyalty.toObject() : this.loyalty || {}),
+      cardNumber: `DC-${String(this._id || new mongoose.Types.ObjectId()).slice(-8).toUpperCase()}`,
+    };
+  }
 
-  likes: [likeSchema],
-
-  // ✅ embedded orders
-  orders: { type: [orderSchema], default: [] },
-
-  loyalty: { type: loyaltySchema, default: () => ({}) },
-  rewards: { type: [rewardSchema], default: [] },
-
-  resetCode: { type: String },
-}, { timestamps: true });
+  next();
+});
 
 const User = mongoose.models.User || mongoose.model("User", userSchema);
+
 export default User;

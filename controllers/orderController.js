@@ -228,6 +228,8 @@ export const createMyOrder = async (req, res) => {
         $addToSet: { orders: order._id },
         $set: {
           ...(phone ? { phone } : {}),
+          ...(phone ? { phoneNormalized: normalizePhone(phone) } : {}),
+          ...(city ? { city } : {}),
           lastSeen: new Date(),
           lastActivityAt: new Date(),
         },

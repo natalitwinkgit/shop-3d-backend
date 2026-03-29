@@ -1,5 +1,11 @@
+import bcrypt from "bcryptjs";
 import Order from "../models/Order.js";
-import User from "../models/userModel.js";
+import User, {
+  USER_ROLES,
+  USER_STATUSES,
+  isValidPhone,
+  normalizePhone,
+} from "../models/userModel.js";
 
 const ONLINE_WINDOW_MS = 30 * 1000;
 const AWAY_WINDOW_MS = 5 * 60 * 1000;
@@ -18,6 +24,20 @@ const toBool = (value) => String(value) === "true" || String(value) === "1" || v
 const toNumber = (value, fallback = 0) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+export const normalizeUserPhone = (value) => normalizePhone(value);
+
+export const normalizeUserRole = (value, fallback = "user") => {
+  const normalized = pickStr(value).toLowerCase();
+  if (!normalized) return fallback;
+  return USER_ROLES.includes(normalized) ? normalized : "";
+};
+
+export const normalizeUserStatus = (value, fallback = "active") => {
+  const normalized = pickStr(value).toLowerCase();
+  if (!normalized) return fallback;
+  return USER_STATUSES.includes(normalized) ? normalized : "";
 };
 
 export const splitUserName = (name) => {
@@ -115,6 +135,7 @@ const buildAdminUserResponse = (userDoc, { orderSummary = null, rewards = null }
     name: pickStr(userDoc?.name),
     email: pickStr(userDoc?.email),
     phone: pickStr(userDoc?.phone),
+    city: pickStr(userDoc?.city),
     role: pickStr(userDoc?.role) || "user",
     status: pickStr(userDoc?.status) || "active",
     isAiAssistant: !!userDoc?.isAiAssistant,
@@ -158,6 +179,7 @@ export const buildPublicUserResponse = (userDoc) => {
     name: pickStr(userDoc?.name),
     email: pickStr(userDoc?.email),
     phone: pickStr(userDoc?.phone),
+    city: pickStr(userDoc?.city),
     role: pickStr(userDoc?.role) || "user",
     status: pickStr(userDoc?.status) || "active",
     isOnline: presence !== "offline",
@@ -327,7 +349,7 @@ export const touchUserPresence = async (
       },
     },
     { new: true }
-  ).select("-password");
+  ).select("-passwordHash -password");
 
   return updated;
 };
@@ -347,13 +369,16 @@ export const markUserOffline = async (userId, { page = "", source = "logout" } =
       },
     },
     { new: true }
-  ).select("-password");
+  ).select("-passwordHash -password");
 
   return updated;
 };
 
 export const listAdminUsersData = async () => {
-  const users = await User.find({}).select("-password").sort({ createdAt: -1 }).lean();
+  const users = await User.find({})
+    .select("-passwordHash -password")
+    .sort({ createdAt: -1 })
+    .lean();
   const userIds = users.map((userDoc) => userDoc._id);
 
   const summaryRows = userIds.length
@@ -407,7 +432,7 @@ export const listAdminUsersData = async () => {
 };
 
 export const getAdminUserDetail = async (userId) => {
-  const userDoc = await User.findById(userId).select("-password");
+  const userDoc = await User.findById(userId).select("-passwordHash -password");
   if (!userDoc) {
     const err = new Error("User not found");
     err.statusCode = 404;
@@ -613,7 +638,42 @@ export const restoreRewardFromOrder = async ({ userId, rewardId, orderId }) => {
   return reward;
 };
 
-export const normalizeUserPhone = (value) => pickStr(value);
+export const ensureSeedSuperadminUser = async () => {
+  const email = pickStr(process.env.SUPERADMIN_EMAIL).toLowerCase();
+  const phone = normalizePhone(process.env.SUPERADMIN_PHONE);
+  const password = String(process.env.SUPERADMIN_PASSWORD || "");
+  const name = pickStr(process.env.SUPERADMIN_NAME) || "Root Admin";
+
+  if (!email || !phone || !password || !isValidPhone(phone)) {
+    return null;
+  }
+
+  const passwordHash = await bcrypt.hash(password, 10);
+
+  await User.updateOne(
+    { email },
+    {
+      $setOnInsert: {
+        name,
+        email,
+        phone,
+        phoneNormalized: phone,
+        passwordHash,
+        role: "superadmin",
+        status: "active",
+        city: "",
+      },
+      $set: {
+        phone,
+        phoneNormalized: phone,
+        updatedBy: null,
+      },
+    },
+    { upsert: true }
+  );
+
+  return User.findOne({ email }).select("-passwordHash -password");
+};
 
 export const normalizePresenceInput = (body = {}) => ({
   page: pickStr(body.page || body.path || ""),
