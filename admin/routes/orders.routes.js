@@ -1,21 +1,19 @@
-// server/admin/routes/orders.routes.js
-import express from "express";
-import { protect, admin } from "../../middleware/authMiddleware.js";
+import { Router } from "express";
+
 import {
-  adminListOrders,
-  adminGetOrder,
-  adminPatchOrder,
   adminCancelOrder,
   adminDeleteOrder,
-} from "../controllers/orders.controller.js";
+  adminGetOrder,
+  adminListOrders,
+  adminPatchOrder,
+} from "../../controllers/orderController.js";
 
-const router = express.Router();
+const router = Router();
 
-// /api/admin/orders
-router.get("/", protect, admin, adminListOrders);
-router.get("/:id", protect, admin, adminGetOrder);
-router.patch("/:id", protect, admin, adminPatchOrder);
-router.post("/:id/cancel", protect, admin, adminCancelOrder);
-router.delete("/:id", protect, admin, adminDeleteOrder);
+router.get("/orders", adminListOrders);
+router.get("/orders/:id", adminGetOrder);
+router.patch("/orders/:id", adminPatchOrder);
+router.post("/orders/:id/cancel", adminCancelOrder);
+router.delete("/orders/:id", adminDeleteOrder);
 
 export default router;
