@@ -1,236 +1,157 @@
-// server/admin/routes/products.routes.js
 import { Router } from "express";
-import multer from "multer";
-import path from "path";
-import fs from "fs";
-import mongoose from "mongoose";
 
+import { getProductsStats } from "../../controllers/productController.js";
 import Product from "../../models/Product.js";
+import { adminUpload, toBool } from "../lib/adminShared.js";
 
 const router = Router();
 
-const baseUploadPath = path.join(process.cwd(), "public/uploads/products");
-
-function ensureFolder(key) {
-  const safe = String(key || "uncategorized").trim() || "uncategorized";
-  const folder = path.join(baseUploadPath, safe);
-  if (!fs.existsSync(folder)) fs.mkdirSync(folder, { recursive: true });
-  return folder;
-}
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const category = req.body.category || "uncategorized";
-    cb(null, ensureFolder(category));
-  },
-  filename: (req, file, cb) => {
-    const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    const ext = path.extname(file.originalname);
-    cb(null, `${file.fieldname}-${unique}${ext}`);
-  },
-});
-
-const upload = multer({ storage });
-
-function normalizeBody(req) {
-  // multer form-data все приходить як string
-  const b = req.body || {};
-  const pickObj = (val) => {
-    if (val == null) return undefined;
-    if (typeof val === "object") return val;
-    const s = String(val);
-    try { return JSON.parse(s); } catch { return undefined; }
-  };
-
-  const n = {};
-
-  // name / description можуть прийти як JSON-рядок або як вкладені поля name[ua]
-  n.name = pickObj(b.name) || {
-    ua: b["name[ua]"] ?? b.name_ua ?? "",
-    en: b["name[en]"] ?? b.name_en ?? "",
-  };
-
-  n.description = pickObj(b.description) || {
-    ua: b["description[ua]"] ?? b.desc_ua ?? "",
-    en: b["description[en]"] ?? b.desc_en ?? "",
-  };
-
-  n.slug = (b.slug ?? "").trim();
-  n.category = (b.category ?? "").trim();
-  n.subCategory = (b.subCategory ?? "").trim() || null;
-  n.typeKey = (b.typeKey ?? "").trim();
-
-  // arrays
-  const arr = (x) => {
-    const parsed = pickObj(x);
-    if (Array.isArray(parsed)) return parsed;
-    if (typeof x === "string" && x.includes(",")) return x.split(",").map((t) => t.trim()).filter(Boolean);
-    return Array.isArray(x) ? x : [];
-  };
-
-  n.styleKeys = arr(b.styleKeys);
-  n.colorKeys = arr(b.colorKeys);
-  n.roomKeys = arr(b.roomKeys);
-  n.collectionKeys = arr(b.collectionKeys);
-  n.featureKeys = arr(b.featureKeys);
-
-  // specs
-  n.specifications = pickObj(b.specifications) || {};
-
-  // numbers
-  n.price = Number(b.price ?? 0);
-  n.discount = Number(b.discount ?? 0);
-
-  n.inStock = String(b.inStock ?? "true") === "true";
-  n.stockQty = Number(b.stockQty ?? 0);
-
-  n.status = (b.status ?? "active").trim();
-
-  return n;
-}
-
-function fileToPublicPath(absPath) {
-  // absPath: .../server/public/uploads/products/...
-  // public url: /uploads/products/...
-  const rel = absPath.split(path.join("public")).pop().replaceAll("\\", "/");
-  return rel.startsWith("/") ? rel : `/${rel}`;
-}
-
-// LIST
-router.get("/", async (req, res) => {
+router.get("/products", async (_req, res) => {
   try {
-    const { q, category, subCategory, status } = req.query;
-
-    const filter = {};
-    if (category) filter.category = String(category);
-    if (subCategory) filter.subCategory = String(subCategory);
-    if (status) filter.status = String(status);
-
-    if (q) {
-      const s = String(q).trim();
-      filter.$or = [
-        { "name.ua": new RegExp(s, "i") },
-        { "name.en": new RegExp(s, "i") },
-        { slug: new RegExp(s, "i") },
-      ];
-    }
-
-    const list = await Product.find(filter).sort({ createdAt: -1 }).lean();
-    res.json(list);
-  } catch (e) {
-    res.status(500).json({ message: "ADMIN_PRODUCTS_LIST_ERROR" });
+    const items = await Product.find({}).sort({ createdAt: -1 }).lean();
+    res.json(items);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to load products" });
   }
 });
 
-// GET BY ID
-router.get("/:id", async (req, res) => {
+router.get("/products/stats", getProductsStats);
+
+router.get("/products/:id", async (req, res) => {
   try {
-    if (!mongoose.isValidObjectId(req.params.id)) {
-      return res.status(400).json({ message: "INVALID_ID" });
-    }
-    const doc = await Product.findById(req.params.id).lean();
-    if (!doc) return res.status(404).json({ message: "NOT_FOUND" });
-    res.json(doc);
-  } catch (e) {
-    res.status(500).json({ message: "ADMIN_PRODUCT_GET_ERROR" });
+    const product = await Product.findById(req.params.id).lean();
+    if (!product) return res.status(404).json({ message: "Product not found" });
+    res.json(product);
+  } catch (error) {
+    res.status(400).json({ message: "Product not found" });
   }
 });
 
-// CREATE (multipart)
 router.post(
-  "/",
-  upload.fields([
-    { name: "images", maxCount: 10 },
+  "/products",
+  adminUpload.fields([
+    { name: "images", maxCount: 20 },
     { name: "modelFile", maxCount: 1 },
   ]),
   async (req, res) => {
     try {
-      const data = normalizeBody(req);
+      const body = req.body || {};
+      const name = JSON.parse(body.name || "{}");
+      const description = JSON.parse(body.description || "{}");
+      const styleKeys = JSON.parse(body.styleKeys || "[]");
+      const colorKeys = JSON.parse(body.colorKeys || "[]");
+      const roomKeys = JSON.parse(body.roomKeys || "[]");
+      const collectionKeys = JSON.parse(body.collectionKeys || "[]");
+      const featureKeys = JSON.parse(body.featureKeys || "[]");
+      const specifications = JSON.parse(body.specifications || "{}");
 
-      if (!data.name?.ua || !data.name?.en) {
-        return res.status(400).json({ message: "NAME_REQUIRED" });
-      }
-      if (!data.slug) return res.status(400).json({ message: "SLUG_REQUIRED" });
-      if (!data.category) return res.status(400).json({ message: "CATEGORY_REQUIRED" });
+      const imageFiles = req.files?.images || [];
+      const modelFiles = req.files?.modelFile || [];
+      const images = imageFiles.map((file) => `/uploads/products/${file.filename}`);
+      const modelUrl = modelFiles[0] ? `/uploads/products/${modelFiles[0].filename}` : "";
 
-      const files = req.files || {};
-      const imgs = (files.images || []).map((f) => fileToPublicPath(f.path));
-      const model = (files.modelFile || [])[0];
-      const modelUrl = model ? fileToPublicPath(model.path) : "";
-
-      const created = await Product.create({
-        ...data,
-        images: imgs,
+      const doc = await Product.create({
+        name,
+        description,
+        slug: String(body.slug || "").trim(),
+        category: String(body.category || "").trim(),
+        subCategory: String(body.subCategory || "").trim(),
+        typeKey: String(body.typeKey || "").trim(),
+        price: Number(body.price || 0),
+        discount: Number(body.discount || 0),
+        inStock: toBool(body.inStock),
+        stockQty: Number(body.stockQty || 0),
+        status: String(body.status || "active"),
+        styleKeys,
+        colorKeys,
+        roomKeys,
+        collectionKeys,
+        featureKeys,
+        specifications,
+        images,
         modelUrl,
       });
 
-      res.status(201).json(created);
-    } catch (e) {
-      res.status(400).json({ message: "ADMIN_PRODUCT_CREATE_ERROR" });
+      res.status(201).json(doc);
+    } catch (error) {
+      console.error("[ADMIN products POST]", error);
+      res.status(400).json({ message: "Create product failed" });
     }
   }
 );
 
-// UPDATE (multipart)
 router.put(
-  "/:id",
-  upload.fields([
-    { name: "images", maxCount: 10 },
+  "/products/:id",
+  adminUpload.fields([
+    { name: "images", maxCount: 20 },
     { name: "modelFile", maxCount: 1 },
   ]),
   async (req, res) => {
     try {
-      if (!mongoose.isValidObjectId(req.params.id)) {
-        return res.status(400).json({ message: "INVALID_ID" });
+      const body = req.body || {};
+      const product = await Product.findById(req.params.id);
+      if (!product) return res.status(404).json({ message: "Product not found" });
+
+      const name = JSON.parse(body.name || "{}");
+      const description = JSON.parse(body.description || "{}");
+      const styleKeys = JSON.parse(body.styleKeys || "[]");
+      const colorKeys = JSON.parse(body.colorKeys || "[]");
+      const roomKeys = JSON.parse(body.roomKeys || "[]");
+      const collectionKeys = JSON.parse(body.collectionKeys || "[]");
+      const featureKeys = JSON.parse(body.featureKeys || "[]");
+      const specifications = JSON.parse(body.specifications || "{}");
+
+      let keepImages = [];
+      try {
+        keepImages = JSON.parse(body.keepImages || "[]");
+      } catch {
+        keepImages = [];
       }
 
-      const data = normalizeBody(req);
+      const newImageFiles = req.files?.images || [];
+      const newImages = newImageFiles.map((file) => `/uploads/products/${file.filename}`);
+      const modelFiles = req.files?.modelFile || [];
+      const newModel = modelFiles[0] ? `/uploads/products/${modelFiles[0].filename}` : null;
 
-      const files = req.files || {};
-      const newImgs = (files.images || []).map((f) => fileToPublicPath(f.path));
-      const model = (files.modelFile || [])[0];
-      const newModelUrl = model ? fileToPublicPath(model.path) : "";
+      product.name = name;
+      product.description = description;
+      product.slug = String(body.slug || "").trim();
+      product.category = String(body.category || "").trim();
+      product.subCategory = String(body.subCategory || "").trim();
+      product.typeKey = String(body.typeKey || "").trim();
+      product.price = Number(body.price || 0);
+      product.discount = Number(body.discount || 0);
+      product.inStock = toBool(body.inStock);
+      product.stockQty = Number(body.stockQty || 0);
+      product.status = String(body.status || "active");
+      product.styleKeys = styleKeys;
+      product.colorKeys = colorKeys;
+      product.roomKeys = roomKeys;
+      product.collectionKeys = collectionKeys;
+      product.featureKeys = featureKeys;
+      product.specifications = specifications;
+      product.images = [...(Array.isArray(keepImages) ? keepImages : []), ...newImages];
 
-      // якщо фронт не прислав images[] — залишаємо як є
-      // якщо прислав JSON масив у body.images — беремо його
-      let images = undefined;
-      if (req.body?.images != null) {
-        try {
-          const parsed = JSON.parse(String(req.body.images));
-          if (Array.isArray(parsed)) images = parsed;
-        } catch {}
-      }
+      if (newModel) product.modelUrl = newModel;
 
-      const update = {
-        ...data,
-      };
-
-      if (images) update.images = [...images, ...newImgs];
-      else if (newImgs.length) update.images = newImgs;
-
-      if (newModelUrl) update.modelUrl = newModelUrl;
-
-      const updated = await Product.findByIdAndUpdate(req.params.id, update, { new: true });
-      if (!updated) return res.status(404).json({ message: "NOT_FOUND" });
-
-      res.json(updated);
-    } catch (e) {
-      res.status(400).json({ message: "ADMIN_PRODUCT_UPDATE_ERROR" });
+      const saved = await product.save();
+      res.json(saved);
+    } catch (error) {
+      console.error("[ADMIN products PUT]", error);
+      res.status(400).json({ message: "Update product failed" });
     }
   }
 );
 
-// DELETE
-router.delete("/:id", async (req, res) => {
+router.delete("/products/:id", async (req, res) => {
   try {
-    if (!mongoose.isValidObjectId(req.params.id)) {
-      return res.status(400).json({ message: "INVALID_ID" });
-    }
-    const deleted = await Product.findByIdAndDelete(req.params.id);
-    if (!deleted) return res.status(404).json({ message: "NOT_FOUND" });
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ message: "Product not found" });
+
+    await product.deleteOne();
     res.json({ ok: true });
-  } catch (e) {
-    res.status(400).json({ message: "ADMIN_PRODUCT_DELETE_ERROR" });
+  } catch (error) {
+    res.status(500).json({ message: "Delete product failed" });
   }
 });
 

@@ -1,125 +1,176 @@
-// server/admin/routes/categories.routes.js
 import { Router } from "express";
-import multer from "multer";
-import path from "path";
-import fs from "fs";
-import mongoose from "mongoose";
 
 import Category from "../../models/Category.js";
+import { adminUpload } from "../lib/adminShared.js";
 
 const router = Router();
 
-const baseUploadPath = path.join(process.cwd(), "public/uploads/categories");
-
-function ensureFolder(categoryKey) {
-  const safe = String(categoryKey || "unknown").trim() || "unknown";
-  const folder = path.join(baseUploadPath, safe);
-  if (!fs.existsSync(folder)) fs.mkdirSync(folder, { recursive: true });
-  return folder;
-}
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const category = req.body.category || "unknown";
-    cb(null, ensureFolder(category));
-  },
-  filename: (req, file, cb) => {
-    const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, `${unique}${path.extname(file.originalname)}`);
-  },
-});
-
-const upload = multer({ storage });
-
-function fileToPublicPath(absPath) {
-  const rel = absPath.split(path.join("public")).pop().replaceAll("\\", "/");
-  return rel.startsWith("/") ? rel : `/${rel}`;
-}
-
-// LIST
-router.get("/", async (req, res) => {
+router.get("/categories", async (_req, res) => {
   try {
-    const list = await Category.find().sort({ order: 1, createdAt: -1 }).lean();
-    res.json(list);
-  } catch (e) {
-    res.status(500).json({ message: "ADMIN_CATEGORIES_LIST_ERROR" });
+    const items = await Category.find({}).sort({ order: 1, createdAt: -1 }).lean();
+    res.json(items);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to load categories" });
   }
 });
 
-// CREATE
-router.post("/", upload.single("image"), async (req, res) => {
+router.get("/categories/:category/children", async (req, res) => {
   try {
-    const { category, name_ua, name_en, order = 0, imageUrl = "" } = req.body;
+    const doc = await Category.findOne({ category: req.params.category })
+      .select("category names image order children")
+      .lean();
 
-    if (!category || !name_ua || !name_en) {
-      return res.status(400).json({ message: "category, name_ua, name_en required" });
+    if (!doc) return res.status(404).json({ message: "Категорію не знайдено" });
+
+    res.json({
+      parent: {
+        category: doc.category,
+        names: doc.names,
+        image: doc.image,
+        order: doc.order,
+      },
+      children: Array.isArray(doc.children) ? doc.children : [],
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Помилка при отриманні підкатегорій" });
+  }
+});
+
+router.post("/categories/:category/children", async (req, res) => {
+  try {
+    const { category } = req.params;
+    const { key, name_ua, name_en, image = "", order = 0 } = req.body || {};
+
+    if (!key || !name_ua || !name_en) {
+      return res.status(400).json({ message: "key, name_ua, name_en - required" });
     }
 
-    const image = req.file
-      ? fileToPublicPath(req.file.path) // /uploads/categories/<key>/<file>
-      : String(imageUrl || "").trim();
+    const doc = await Category.findOne({ category });
+    if (!doc) return res.status(404).json({ message: "Категорію не знайдено" });
 
-    const doc = await Category.create({
-      category,
+    const exists = (doc.children || []).some((child) => child.key === key);
+    if (exists) {
+      return res.status(409).json({ message: "Підкатегорія з таким key вже існує" });
+    }
+
+    doc.children.push({
+      key,
       names: { ua: name_ua, en: name_en },
       image,
       order: Number(order) || 0,
+    });
+
+    await doc.save();
+    res.status(201).json(doc);
+  } catch (error) {
+    console.error("[ADMIN categories children POST]", error);
+    res.status(500).json({ message: "Помилка при створенні підкатегорії" });
+  }
+});
+
+router.put("/categories/:category/children/:key", async (req, res) => {
+  try {
+    const { category, key } = req.params;
+    const { name_ua, name_en, image, order } = req.body || {};
+
+    const doc = await Category.findOne({ category });
+    if (!doc) return res.status(404).json({ message: "Категорію не знайдено" });
+
+    const index = (doc.children || []).findIndex((child) => child.key === key);
+    if (index === -1) {
+      return res.status(404).json({ message: "Підкатегорію не знайдено" });
+    }
+
+    if (name_ua) doc.children[index].names.ua = name_ua;
+    if (name_en) doc.children[index].names.en = name_en;
+    if (typeof image === "string") doc.children[index].image = image;
+    if (order != null) doc.children[index].order = Number(order) || 0;
+
+    await doc.save();
+    res.json(doc);
+  } catch (error) {
+    console.error("[ADMIN categories children PUT]", error);
+    res.status(500).json({ message: "Помилка при оновленні підкатегорії" });
+  }
+});
+
+router.delete("/categories/:category/children/:key", async (req, res) => {
+  try {
+    const { category, key } = req.params;
+    const doc = await Category.findOne({ category });
+    if (!doc) return res.status(404).json({ message: "Категорію не знайдено" });
+
+    doc.children = (doc.children || []).filter((child) => child.key !== key);
+    await doc.save();
+
+    res.json({ message: "Підкатегорію видалено" });
+  } catch (error) {
+    console.error("[ADMIN categories children DELETE]", error);
+    res.status(500).json({ message: "Помилка при видаленні підкатегорії" });
+  }
+});
+
+router.post("/categories", adminUpload.single("image"), async (req, res) => {
+  try {
+    const { category, name_ua, name_en, order, imageUrl } = req.body || {};
+    if (!category || !name_ua || !name_en) {
+      return res.status(400).json({ message: "category + name_ua + name_en are required" });
+    }
+
+    const image = req.file
+      ? `/uploads/categories/${req.file.filename}`
+      : (String(imageUrl || "").trim() || "");
+
+    const doc = await Category.create({
+      category: String(category).trim(),
+      names: { ua: String(name_ua || ""), en: String(name_en || "") },
+      order: Number(order || 0),
+      image,
       children: [],
-      folderPath: ensureFolder(category),
     });
 
     res.status(201).json(doc);
-  } catch (e) {
-    if (e?.code === 11000) return res.status(409).json({ message: "DUPLICATE_CATEGORY_KEY" });
-    res.status(400).json({ message: "ADMIN_CATEGORY_CREATE_ERROR" });
+  } catch (error) {
+    console.error("[ADMIN categories POST]", error);
+    res.status(400).json({ message: "Create category failed" });
   }
 });
 
-// UPDATE BY ID
-router.put("/:id", upload.single("image"), async (req, res) => {
+router.put("/categories/:id", adminUpload.single("image"), async (req, res) => {
   try {
-    if (!mongoose.isValidObjectId(req.params.id)) {
-      return res.status(400).json({ message: "INVALID_ID" });
+    const category = await Category.findById(req.params.id);
+    if (!category) return res.status(404).json({ message: "Category not found" });
+
+    const { name_ua, name_en, order, imageUrl } = req.body || {};
+    category.names = {
+      ua: String(name_ua ?? category.names?.ua ?? ""),
+      en: String(name_en ?? category.names?.en ?? ""),
+    };
+    category.order = Number(order ?? category.order ?? 0);
+
+    if (req.file) {
+      category.image = `/uploads/categories/${req.file.filename}`;
+    } else if (typeof imageUrl === "string") {
+      category.image = imageUrl.trim();
     }
 
-    const { category, name_ua, name_en, order, imageUrl } = req.body;
-
-    const update = {};
-    if (category) update.category = category;
-    if (name_ua && name_en) update.names = { ua: name_ua, en: name_en };
-    if (order != null) update.order = Number(order) || 0;
-
-    if (req.file) update.image = fileToPublicPath(req.file.path);
-    else if (imageUrl != null) update.image = String(imageUrl).trim();
-
-    if (category) update.folderPath = ensureFolder(category);
-
-    const updated = await Category.findByIdAndUpdate(req.params.id, update, { new: true });
-    if (!updated) return res.status(404).json({ message: "NOT_FOUND" });
-
-    res.json(updated);
-  } catch (e) {
-    res.status(400).json({ message: "ADMIN_CATEGORY_UPDATE_ERROR" });
+    const saved = await category.save();
+    res.json(saved);
+  } catch (error) {
+    console.error("[ADMIN categories PUT]", error);
+    res.status(400).json({ message: "Update category failed" });
   }
 });
 
-// DELETE BY ID
-router.delete("/:id", async (req, res) => {
+router.delete("/categories/:id", async (req, res) => {
   try {
-    if (!mongoose.isValidObjectId(req.params.id)) {
-      return res.status(400).json({ message: "INVALID_ID" });
-    }
+    const category = await Category.findById(req.params.id);
+    if (!category) return res.status(404).json({ message: "Category not found" });
 
-    const deleted = await Category.findByIdAndDelete(req.params.id);
-    if (!deleted) return res.status(404).json({ message: "NOT_FOUND" });
-
-    // видалити папку uploads/categories/<key>
-    const folder = path.join(baseUploadPath, deleted.category);
-    if (fs.existsSync(folder)) fs.rmSync(folder, { recursive: true, force: true });
-
+    await category.deleteOne();
     res.json({ ok: true });
-  } catch (e) {
-    res.status(400).json({ message: "ADMIN_CATEGORY_DELETE_ERROR" });
+  } catch (error) {
+    res.status(500).json({ message: "Delete category failed" });
   }
 });
 
