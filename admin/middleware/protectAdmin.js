@@ -1,13 +1,11 @@
-// server/admin/middleware/protectAdmin.js
+import { isAdminRole } from "../../models/userModel.js";
+
 export function protectAdmin(req, res, next) {
-  // protect middleware має поставити req.user
   const u = req.user;
 
-  // Підлаштуй під свою модель користувача:
-  // role: "admin" | "user" або isAdmin: true/false
   const ok =
     !!u &&
-    (u.role === "admin" ||
+    (isAdminRole(u.role) ||
       u.isAdmin === true ||
       u.is_admin === true);
 

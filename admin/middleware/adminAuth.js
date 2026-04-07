@@ -1,5 +1,5 @@
 import jwt from "jsonwebtoken";
-import User from "../../models/userModel.js";
+import User, { isAdminRole } from "../../models/userModel.js";
 
 export async function protectAdmin(req, res, next) {
   try {
@@ -13,8 +13,7 @@ export async function protectAdmin(req, res, next) {
 
     if (!user) return res.status(401).json({ message: "USER_NOT_FOUND" });
 
-    // Варианты: user.role === 'admin' или user.isAdmin === true
-    const isAdmin = user.role === "admin" || user.isAdmin === true;
+    const isAdmin = isAdminRole(user.role) || user.isAdmin === true;
 
     if (!isAdmin) return res.status(403).json({ message: "FORBIDDEN" });
 

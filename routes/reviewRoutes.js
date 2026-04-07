@@ -4,6 +4,7 @@ import mongoose from "mongoose";
 import Review from "../models/Review.js";
 import Product from "../models/Product.js";
 import { protect } from "../middleware/authMiddleware.js";
+import { isAdminRole } from "../models/userModel.js";
 
 const router = express.Router();
 
@@ -16,7 +17,7 @@ const noCache = (res) => {
   res.set("Expires", "0");
 };
 
-const isAdmin = (req) => String(req?.user?.role || "").toLowerCase() === "admin";
+const isAdmin = (req) => isAdminRole(req?.user?.role);
 
 /**
  * Recompute ratingAvg/ratingCount in Product from approved reviews
@@ -83,7 +84,7 @@ router.get("/product/:productId", async (req, res) => {
 
     const [items, total, stats] = await Promise.all([
       Review.find(filter)
-        .populate("user", "name email")
+        .populate("user", "name")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit),
@@ -151,7 +152,7 @@ router.get("/", async (req, res) => {
 
     const [items, total, avgAgg] = await Promise.all([
       Review.find(filter)
-        .populate("user", "name email")
+        .populate("user", "name")
         .populate("product", "name category subCategory image images price discount")
         .sort(sort)
         .skip(skip)
@@ -262,7 +263,7 @@ router.post("/", protect, async (req, res) => {
         isApproved: true,
       },
       { new: true, upsert: true, setDefaultsOnInsert: true }
-    ).populate("user", "name email");
+    ).populate("user", "name");
 
     const { avgRating, count } = await recomputeAndUpdateProductRating(productId);
 

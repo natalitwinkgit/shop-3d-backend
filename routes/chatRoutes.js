@@ -1,39 +1,58 @@
 // server/routes/chatRoutes.js
 import express from "express";
+import { createRateLimit } from "../middleware/rateLimitMiddleware.js";
 import { protect } from "../middleware/authMiddleware.js";
-import { isAdminRole } from "../models/userModel.js";
+import { canAccessSupportConversation } from "../services/chatAccessService.js";
 import {
   getConversationHistory,
   getSupportAdminProfile,
   markConversationRead,
 } from "../services/adminChatService.js";
+import { createGuestChatSession } from "../services/chatSessionService.js";
 
 const router = express.Router();
 
-const canAccessChat = (req, firstId, secondId) => {
-  const currentUserId = String(req.user?._id || req.user?.id || "");
-  return (
-    isAdminRole(req.user?.role) ||
-    currentUserId === String(firstId) ||
-    currentUserId === String(secondId)
-  );
-};
+const guestSessionRateLimit = createRateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: "Too many guest chat session requests. Please try again later.",
+});
 
-router.get("/admin-id", async (req, res) => {
+router.post("/guest-session", guestSessionRateLimit, async (req, res) => {
   try {
-    const adminProfile = await getSupportAdminProfile();
+    const session = await createGuestChatSession({
+      guestName: req.body?.guestName || "",
+    });
+    res.status(201).json(session);
+  } catch (e) {
+    res.status(e.statusCode || 500).json({
+      message: e.message || "Failed to create guest session",
+    });
+  }
+});
+
+router.get("/admin-id", protect, async (req, res) => {
+  try {
+    const adminProfile = await getSupportAdminProfile({ currentUser: req.user });
     if (!adminProfile) return res.status(404).json({ message: "No admin found" });
-    res.json({ adminId: adminProfile.adminId });
+    res.json({
+      adminId: adminProfile.adminId,
+      adminName: adminProfile.adminName || "Admin",
+    });
   } catch (e) {
     res.status(500).json({ message: "Failed to get admin id" });
   }
 });
 
-router.get("/support-admin", async (req, res) => {
+router.get("/support-admin", protect, async (req, res) => {
   try {
-    const adminProfile = await getSupportAdminProfile();
+    const adminProfile = await getSupportAdminProfile({ currentUser: req.user });
     if (!adminProfile) return res.status(404).json({ message: "No admin found" });
-    res.json({ adminId: adminProfile.adminId });
+    res.json({
+      adminId: adminProfile.adminId,
+      adminName: adminProfile.adminName || "Admin",
+      isAiAssistant: !!adminProfile.isAiAssistant,
+    });
   } catch (e) {
     res.status(500).json({ message: "Failed to get admin id" });
   }
@@ -51,7 +70,13 @@ router.patch("/read/:senderId/:receiverId", protect, async (req, res) => {
       return res.status(400).json({ message: "senderId and receiverId required" });
     }
 
-    if (!canAccessChat(req, senderId, receiverId)) {
+    if (
+      !(await canAccessSupportConversation({
+        currentUser: req.user,
+        firstId: senderId,
+        secondId: receiverId,
+      }))
+    ) {
       return res.status(403).json({ message: "Forbidden" });
     }
 
@@ -74,7 +99,13 @@ router.get("/:userId1/:userId2", protect, async (req, res) => {
       return res.status(400).json({ message: "Two user ids required" });
     }
 
-    if (!canAccessChat(req, userId1, userId2)) {
+    if (
+      !(await canAccessSupportConversation({
+        currentUser: req.user,
+        firstId: userId1,
+        secondId: userId2,
+      }))
+    ) {
       return res.status(403).json({ message: "Forbidden" });
     }
 

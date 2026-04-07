@@ -1,24 +1,21 @@
 import express from "express";
 import { protect } from "../middleware/authMiddleware.js";
-import { isAdminRole } from "../models/userModel.js";
+import { canAccessSupportConversation } from "../services/chatAccessService.js";
 import { getConversationHistory, markConversationRead } from "../services/adminChatService.js";
 
 const router = express.Router();
-
-const canAccessMessages = (req, firstId, secondId) => {
-  const currentUserId = String(req.user?._id || req.user?.id || "");
-  return (
-    isAdminRole(req.user?.role) ||
-    currentUserId === String(firstId) ||
-    currentUserId === String(secondId)
-  );
-};
 
 // Отримати історію повідомлень між двома користувачами
 router.get("/:userId1/:userId2", protect, async (req, res) => {
   const { userId1, userId2 } = req.params;
   try {
-    if (!canAccessMessages(req, userId1, userId2)) {
+    if (
+      !(await canAccessSupportConversation({
+        currentUser: req.user,
+        firstId: userId1,
+        secondId: userId2,
+      }))
+    ) {
       return res.status(403).json({ message: "Forbidden" });
     }
 
@@ -33,7 +30,13 @@ router.get("/:userId1/:userId2", protect, async (req, res) => {
 // Позначити повідомлення як прочитані (для адмінки)
 router.patch("/read/:senderId/:receiverId", protect, async (req, res) => {
   try {
-    if (!canAccessMessages(req, req.params.senderId, req.params.receiverId)) {
+    if (
+      !(await canAccessSupportConversation({
+        currentUser: req.user,
+        firstId: req.params.senderId,
+        secondId: req.params.receiverId,
+      }))
+    ) {
       return res.status(403).json({ message: "Forbidden" });
     }
 
