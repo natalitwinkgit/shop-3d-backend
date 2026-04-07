@@ -1,6 +1,6 @@
 # Frontend API Reference
 
-Updated: 2026-03-27
+Updated: 2026-04-07
 Source of truth: current mounted routes in `index.js` and route definitions in `routes/`.
 
 ## Base
@@ -86,6 +86,7 @@ Source of truth: current mounted routes in `index.js` and route definitions in `
 ### Reviews
 
 - `GET /api/reviews/product/:productId?page=1&limit=10`
+  - reviewer public data now returns `user.name` only; reviewer email is no longer exposed
   - returns:
   ```json
   {
@@ -109,8 +110,6 @@ Source of truth: current mounted routes in `index.js` and route definitions in `
 
 - `GET /api/spec-templates/:typeKey`
 - `GET /api/inventory/product/:productId`
-- `GET /api/chat/admin-id`
-- `GET /api/chat/support-admin`
 - `GET /api/heartbeat`
 - `GET /api/i18n-missing`
 - `POST /api/i18n-missing`
@@ -337,12 +336,47 @@ Source of truth: current mounted routes in `index.js` and route definitions in `
 
 ### Chat / Messages
 
+- `POST /api/chat/guest-session`
+  - public route for anonymous support chat only
+  - body:
+  ```json
+  {
+    "guestName": "Optional guest name"
+  }
+  ```
+  - response:
+  ```json
+  {
+    "guestId": "guest_xxxxx",
+    "guestName": "Guest",
+    "token": "guest_chat_jwt",
+    "expiresAt": "2026-04-14T12:00:00.000Z",
+    "supportAdmin": {
+      "adminId": "admin_user_id",
+      "adminName": "Support Admin",
+      "isAiAssistant": false
+    }
+  }
+  ```
+
+- `GET /api/chat/admin-id`
+- `GET /api/chat/support-admin`
+  - now require `Authorization: Bearer <token>`
+  - use these only for logged-in users
+
 - `GET /api/chat/:userId1/:userId2`
 - `PATCH /api/chat/read/:senderId/:receiverId`
 
 - `GET /api/messages/:userId1/:userId2`
 - `PATCH /api/messages/read/:senderId/:receiverId`
   - legacy aliases for the same conversation history/read logic
+
+Rules:
+
+- non-admin users can access only support conversations that include:
+  - their own `userId`
+  - an admin `userId`
+- non-admin user-to-user chat is now blocked by backend access control
 
 ## Admin API
 
@@ -752,7 +786,37 @@ Socket server shares the same backend origin.
 - `join`
 - `join_chat`
 
-Payload:
+Socket auth is now required during handshake.
+
+Authenticated user/admin example:
+
+```ts
+const socket = io(baseUrl, {
+  auth: {
+    token: userToken
+  }
+});
+```
+
+Anonymous guest example:
+
+```ts
+const guestSession = await fetch("/api/chat/guest-session", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ guestName })
+}).then((r) => r.json());
+
+const socket = io(baseUrl, {
+  auth: {
+    token: guestSession.token
+  }
+});
+```
+
+Join payload is now optional. The server ignores arbitrary room ids and only joins the authenticated socket to its own room.
+
+Optional payload:
 
 ```json
 {
@@ -760,7 +824,7 @@ Payload:
 }
 ```
 
-The backend also accepts `id` and `roomId`.
+The backend still accepts the event for backward compatibility, but no longer trusts `id` or `roomId`.
 
 ### Send message events
 
@@ -771,7 +835,7 @@ Payload:
 
 ```json
 {
-  "sender": "admin_or_user_id",
+  "sender": "must_match_authenticated_socket_id",
   "receiver": "user_or_guest_id",
   "text": "Привіт",
   "guestName": "Іван"
@@ -786,6 +850,13 @@ Aliases also accepted:
 - `senderId`
 - `receiverId`
 - `chatUserId`
+
+Rules:
+
+- admin sockets can send to customers or guests
+- logged-in users can send only to admin receivers
+- guest sockets can send only to admin receivers
+- spoofed `sender` values are rejected by the backend
 
 ### Receive message events
 
@@ -814,6 +885,9 @@ Payload contains the saved message from DB plus aliases:
 - Use `POST /api/orders/preview` before `POST /api/orders`.
 - Render loyalty and rewards from `auth/me`, not from client-side guesswork.
 - Admin frontend should not call legacy public mutation routes when `/api/admin/*` exists.
+- Storefront support chat must send socket auth token in handshake.
+- Anonymous support chat must first call `POST /api/chat/guest-session`, persist `guestId` + `token`, and use `supportAdmin.adminId` from that response.
+- Logged-in users must stop using public `/api/chat/admin-id` or `/api/chat/support-admin` without auth; send the regular user JWT.
 - For AI catalog answers, render product cards from:
   - `result.products` in AI response
   - `message.meta.productCards` in chat history/socket payload
