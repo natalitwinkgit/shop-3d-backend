@@ -2,6 +2,11 @@ import Inventory from "../models/Inventory.js";
 import InventoryMovement from "../models/InventoryMovement.js";
 import Location from "../models/Location.js";
 import Product from "../models/Product.js";
+import {
+  buildLocationPresentation,
+  loadLocationTranslations,
+  resolveLocationLang,
+} from "../services/locationPresentationService.js";
 
 const toNum = (x, def = 0) => {
   const n = Number(x);
@@ -15,16 +20,22 @@ const pickStr = (value) => String(value || "").trim();
 const toBool = (value) => String(value) === "true" || String(value) === "1" || value === true;
 
 const isObjectIdLike = (value) => /^[a-f0-9]{24}$/i.test(String(value || ""));
+const LOCATION_SELECT =
+  "_id type city cityKey name nameKey address addressKey phone workingHours coordinates isActive";
 
 const getActorContext = (req) => ({
   actorId: String(req.user?._id || req.user?.id || ""),
   actorName: req.user?.name || req.user?.email || "Admin",
 });
 
-const formatInventoryRow = (doc) => {
+const presentLocation = (locationDoc, translations) =>
+  buildLocationPresentation(locationDoc || {}, translations);
+
+const formatInventoryRow = (doc, translations) => {
   const onHand = clamp0(doc.onHand);
   const reserved = clamp0(doc.reserved);
   const available = Math.max(0, onHand - reserved);
+  const location = presentLocation(doc.location, translations);
 
   return {
     id: String(doc._id),
@@ -34,12 +45,17 @@ const formatInventoryRow = (doc) => {
     productSlug: doc.product?.slug || "",
     productCategory: doc.product?.category || "",
     productStatus: doc.product?.status || "",
-    locationId: String(doc.location?._id || doc.location || ""),
-    locationType: doc.location?.type || "",
-    city: doc.location?.city || "",
-    locationNameKey: doc.location?.nameKey || "",
-    addressKey: doc.location?.addressKey || "",
-    isActive: doc.location?.isActive ?? true,
+    locationId: location.id || String(doc.location?._id || doc.location || ""),
+    locationType: location.type || "",
+    city: location.city || "",
+    cityKey: location.cityKey || "",
+    cityLabel: location.cityLabel || location.city || "",
+    locationName: location.name || "",
+    locationNameKey: location.nameKey || "",
+    locationAddress: location.address || "",
+    addressKey: location.addressKey || "",
+    isActive: location.isActive ?? true,
+    location,
     onHand,
     reserved,
     available,
@@ -51,34 +67,52 @@ const formatInventoryRow = (doc) => {
   };
 };
 
-const formatMovement = (doc) => ({
-  id: String(doc._id),
-  type: doc.type || "",
-  productId: String(doc.product?._id || doc.product || ""),
-  productName: doc.product?.name?.ua || doc.product?.name?.en || doc.product?.slug || "",
-  productSlug: doc.product?.slug || "",
-  locationId: String(doc.location?._id || doc.location || ""),
-  locationNameKey: doc.location?.nameKey || "",
-  fromLocationId: String(doc.fromLocation?._id || doc.fromLocation || ""),
-  fromLocationNameKey: doc.fromLocation?.nameKey || "",
-  toLocationId: String(doc.toLocation?._id || doc.toLocation || ""),
-  toLocationNameKey: doc.toLocation?.nameKey || "",
-  deltaOnHand: Number(doc.deltaOnHand || 0),
-  deltaReserved: Number(doc.deltaReserved || 0),
-  previousOnHand: Number(doc.previousOnHand || 0),
-  nextOnHand: Number(doc.nextOnHand || 0),
-  previousReserved: Number(doc.previousReserved || 0),
-  nextReserved: Number(doc.nextReserved || 0),
-  quantity: Number(doc.quantity || 0),
-  zone: pickStr(doc.zone),
-  note: pickStr(doc.note),
-  isShowcase: !!doc.isShowcase,
-  actorId: pickStr(doc.actorId),
-  actorName: pickStr(doc.actorName),
-  reason: pickStr(doc.reason),
-  createdAt: doc.createdAt,
-  meta: doc.meta || null,
-});
+const formatMovement = (doc, translations) => {
+  const location = presentLocation(doc.location, translations);
+  const fromLocation = presentLocation(doc.fromLocation, translations);
+  const toLocation = presentLocation(doc.toLocation, translations);
+
+  return {
+    id: String(doc._id),
+    type: doc.type || "",
+    productId: String(doc.product?._id || doc.product || ""),
+    productName: doc.product?.name?.ua || doc.product?.name?.en || doc.product?.slug || "",
+    productSlug: doc.product?.slug || "",
+    locationId: location.id || String(doc.location?._id || doc.location || ""),
+    locationName: location.name || "",
+    locationNameKey: location.nameKey || "",
+    locationAddress: location.address || "",
+    location,
+    fromLocationId: fromLocation.id || String(doc.fromLocation?._id || doc.fromLocation || ""),
+    fromLocationName: fromLocation.name || "",
+    fromLocationNameKey: fromLocation.nameKey || "",
+    fromLocationAddress: fromLocation.address || "",
+    fromLocation,
+    toLocationId: toLocation.id || String(doc.toLocation?._id || doc.toLocation || ""),
+    toLocationName: toLocation.name || "",
+    toLocationNameKey: toLocation.nameKey || "",
+    toLocationAddress: toLocation.address || "",
+    toLocation,
+    deltaOnHand: Number(doc.deltaOnHand || 0),
+    deltaReserved: Number(doc.deltaReserved || 0),
+    previousOnHand: Number(doc.previousOnHand || 0),
+    nextOnHand: Number(doc.nextOnHand || 0),
+    previousReserved: Number(doc.previousReserved || 0),
+    nextReserved: Number(doc.nextReserved || 0),
+    quantity: Number(doc.quantity || 0),
+    zone: pickStr(doc.zone),
+    note: pickStr(doc.note),
+    isShowcase: !!doc.isShowcase,
+    actorId: pickStr(doc.actorId),
+    actorName: pickStr(doc.actorName),
+    reason: pickStr(doc.reason),
+    createdAt: doc.createdAt,
+    meta: doc.meta || null,
+  };
+};
+
+const loadInventoryTranslations = async (req) =>
+  loadLocationTranslations(resolveLocationLang(req));
 
 const normalizeInventoryPayload = (body = {}) => ({
   onHand: clamp0(body.onHand),
@@ -92,7 +126,7 @@ const normalizeInventoryPayload = (body = {}) => ({
 const ensureProductAndLocation = async ({ productId, locationId }) => {
   const [product, location] = await Promise.all([
     Product.findById(productId).select("_id name slug category status").lean(),
-    Location.findById(locationId).select("_id type city nameKey addressKey isActive").lean(),
+    Location.findById(locationId).select(LOCATION_SELECT).lean(),
   ]);
 
   if (!product) {
@@ -121,11 +155,12 @@ export async function getByProduct(req, res) {
 
     const items = await Inventory.find({ product: productId })
       .populate("product", "name slug category status")
-      .populate("location", "type city nameKey addressKey isActive")
+      .populate("location", LOCATION_SELECT)
       .sort({ isShowcase: -1, updatedAt: -1 })
       .lean();
 
-    return res.json(items.map(formatInventoryRow));
+    const translations = await loadInventoryTranslations(req);
+    return res.json(items.map((item) => formatInventoryRow(item, translations)));
   } catch (e) {
     return res.status(500).json({ message: "Inventory load failed", error: String(e?.message || e) });
   }
@@ -137,12 +172,13 @@ export async function getByLocation(req, res) {
     const { locationId } = req.params;
     const items = await Inventory.find({ location: locationId })
       .populate("product", "name slug category status")
-      .populate("location", "type city nameKey addressKey isActive")
+      .populate("location", LOCATION_SELECT)
       .sort({ isShowcase: -1, updatedAt: -1 })
       .lean();
+    const translations = await loadInventoryTranslations(req);
 
     return res.json({
-      items: items.map(formatInventoryRow),
+      items: items.map((item) => formatInventoryRow(item, translations)),
       total: items.length,
     });
   } catch (e) {
@@ -170,12 +206,13 @@ export async function getOverview(req, res) {
 
     const rows = await Inventory.find(filter)
       .populate("product", "name slug category status")
-      .populate("location", "type city nameKey addressKey isActive")
+      .populate("location", LOCATION_SELECT)
       .sort({ updatedAt: -1 })
       .lean();
+    const translations = await loadInventoryTranslations(req);
 
     const items = rows
-      .map(formatInventoryRow)
+      .map((row) => formatInventoryRow(row, translations))
       .filter((item) => {
         if (!q) return true;
 
@@ -183,8 +220,11 @@ export async function getOverview(req, res) {
           item.productName,
           item.productSlug,
           item.productCategory,
+          item.locationName,
           item.locationNameKey,
+          item.locationAddress,
           item.city,
+          item.cityLabel,
           item.zone,
           item.note,
         ]
@@ -261,7 +301,7 @@ export async function upsert(req, res) {
       { new: true, upsert: true }
     )
       .populate("product", "name slug category status")
-      .populate("location", "type city nameKey addressKey isActive")
+      .populate("location", LOCATION_SELECT)
       .lean();
 
     await logInventoryMovement({
@@ -282,7 +322,8 @@ export async function upsert(req, res) {
       reason: payload.reason,
     });
 
-    return res.json(formatInventoryRow(doc));
+    const translations = await loadInventoryTranslations(req);
+    return res.json(formatInventoryRow(doc, translations));
   } catch (e) {
     if (String(e).includes("E11000")) {
       return res.status(409).json({ message: "Duplicate inventory row (product+location)" });
@@ -378,18 +419,19 @@ export async function transfer(req, res) {
     const [sourceRow, targetRow] = await Promise.all([
       Inventory.findById(source._id)
         .populate("product", "name slug category status")
-        .populate("location", "type city nameKey addressKey isActive")
+        .populate("location", LOCATION_SELECT)
         .lean(),
       Inventory.findById(target._id)
         .populate("product", "name slug category status")
-        .populate("location", "type city nameKey addressKey isActive")
+        .populate("location", LOCATION_SELECT)
         .lean(),
     ]);
+    const translations = await loadInventoryTranslations(req);
 
     return res.json({
       ok: true,
-      from: formatInventoryRow(sourceRow),
-      to: formatInventoryRow(targetRow),
+      from: formatInventoryRow(sourceRow, translations),
+      to: formatInventoryRow(targetRow, translations),
       transferredQty: quantity,
     });
   } catch (e) {
@@ -422,15 +464,16 @@ export async function getMovements(req, res) {
 
     const items = await InventoryMovement.find(filter)
       .populate("product", "name slug category")
-      .populate("location", "nameKey city type")
-      .populate("fromLocation", "nameKey city type")
-      .populate("toLocation", "nameKey city type")
+      .populate("location", LOCATION_SELECT)
+      .populate("fromLocation", LOCATION_SELECT)
+      .populate("toLocation", LOCATION_SELECT)
       .sort({ createdAt: -1 })
       .limit(limit)
       .lean();
+    const translations = await loadInventoryTranslations(req);
 
     return res.json({
-      items: items.map(formatMovement),
+      items: items.map((item) => formatMovement(item, translations)),
       total: items.length,
     });
   } catch (e) {

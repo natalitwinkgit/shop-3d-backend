@@ -10,6 +10,11 @@ import {
   restoreRewardFromOrder,
   syncUserCommerceData,
 } from "../services/userProfileService.js";
+import {
+  buildLocationPresentation,
+  loadLocationTranslations,
+  resolveLocationLang,
+} from "../services/locationPresentationService.js";
 
 const isObjectId = (v) => mongoose.Types.ObjectId.isValid(String(v || ""));
 
@@ -23,6 +28,8 @@ const toNumber = (v, fallback = 0) => {
 const pickStr = (v) => String(v ?? "").trim();
 
 const roundMoney = (value) => Math.max(0, Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100);
+const PICKUP_LOCATION_SELECT =
+  "_id type city cityKey name nameKey address addressKey phone workingHours coordinates isActive";
 
 const computeProductUnitPrice = (productDoc) => {
   const price = Math.max(0, toNumber(productDoc?.price, 0));
@@ -42,6 +49,32 @@ const assertUser = (req) => {
     throw err;
   }
   return id;
+};
+
+const enrichPickupLocation = (order, translations) => {
+  const pickupLocationDoc = order?.delivery?.pickupLocationId;
+  if (!pickupLocationDoc || typeof pickupLocationDoc !== "object") {
+    return order;
+  }
+
+  const pickupLocation = buildLocationPresentation(pickupLocationDoc, translations);
+  return {
+    ...order,
+    delivery: {
+      ...(order.delivery || {}),
+      pickupLocationId: pickupLocation,
+      pickupLocation,
+    },
+  };
+};
+
+const enrichOrdersWithLocations = async (req, orders) => {
+  const orderList = Array.isArray(orders) ? orders : [orders];
+  if (!orderList.length) return Array.isArray(orders) ? [] : null;
+
+  const translations = await loadLocationTranslations(resolveLocationLang(req));
+  const enriched = orderList.map((order) => enrichPickupLocation(order, translations));
+  return Array.isArray(orders) ? enriched : enriched[0];
 };
 
 /**
@@ -246,7 +279,11 @@ export const createMyOrder = async (req, res) => {
 
     await syncUserCommerceData(userId);
 
-    res.status(201).json(order);
+    const hydratedOrder = await Order.findById(order._id)
+      .populate("delivery.pickupLocationId", PICKUP_LOCATION_SELECT)
+      .lean();
+
+    res.status(201).json(await enrichOrdersWithLocations(req, hydratedOrder));
   } catch (error) {
     const status = error.statusCode || 500;
     console.error("❌ createMyOrder error:", error);
@@ -355,12 +392,13 @@ export const listMyOrders = async (req, res) => {
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
+        .populate("delivery.pickupLocationId", PICKUP_LOCATION_SELECT)
         .lean(),
       Order.countDocuments({ user: userId }),
     ]);
 
     res.json({
-      items,
+      items: await enrichOrdersWithLocations(req, items),
       total,
       page,
       pages: Math.max(1, Math.ceil(total / limit)),
@@ -382,12 +420,12 @@ export const getMyOrder = async (req, res) => {
     if (!isObjectId(id)) return res.status(400).json({ message: "Invalid order id" });
 
     const order = await Order.findOne({ _id: id, user: userId })
-      .populate("delivery.pickupLocationId", "type city nameKey addressKey phone workingHours coordinates")
+      .populate("delivery.pickupLocationId", PICKUP_LOCATION_SELECT)
       .lean();
 
     if (!order) return res.status(404).json({ message: "Order not found" });
 
-    res.json(order);
+    res.json(await enrichOrdersWithLocations(req, order));
   } catch (error) {
     console.error("❌ getMyOrder error:", error);
     res.status(500).json({ message: "Server error getting order" });
@@ -444,13 +482,14 @@ export const adminListOrders = async (req, res) => {
         .skip(skip)
         .limit(limit)
         .populate("user", "name email")
+        .populate("delivery.pickupLocationId", PICKUP_LOCATION_SELECT)
         .lean(),
       Order.countDocuments(filter),
     ]);
 
     // Return minimal list fields (your AdminOrders expects: _id, customer, status, createdAt, totals/cartTotal)
     res.json({
-      items,
+      items: await enrichOrdersWithLocations(req, items),
       total,
       page,
       pages: Math.max(1, Math.ceil(total / limit)),
@@ -471,12 +510,12 @@ export const adminGetOrder = async (req, res) => {
 
     const order = await Order.findById(id)
       .populate("user", "name email")
-      .populate("delivery.pickupLocationId", "type city nameKey addressKey phone workingHours coordinates isActive")
+      .populate("delivery.pickupLocationId", PICKUP_LOCATION_SELECT)
       .lean();
 
     if (!order) return res.status(404).json({ message: "Order not found" });
 
-    res.json(order);
+    res.json(await enrichOrdersWithLocations(req, order));
   } catch (error) {
     console.error("❌ adminGetOrder error:", error);
     res.status(500).json({ message: "Server error getting order" });
@@ -539,7 +578,7 @@ export const adminPatchOrder = async (req, res) => {
 
     const updated = await Order.findByIdAndUpdate(id, { $set: patch }, { new: true })
       .populate("user", "name email")
-      .populate("delivery.pickupLocationId", "type city nameKey addressKey phone workingHours coordinates")
+      .populate("delivery.pickupLocationId", PICKUP_LOCATION_SELECT)
       .lean();
 
     if (existingOrder.appliedReward?.rewardId) {
@@ -562,7 +601,7 @@ export const adminPatchOrder = async (req, res) => {
       await syncUserCommerceData(existingOrder.user?._id || existingOrder.user);
     }
 
-    res.json(updated);
+    res.json(await enrichOrdersWithLocations(req, updated));
   } catch (error) {
     console.error("❌ adminPatchOrder error:", error);
     res.status(500).json({ message: "Server error updating order" });
@@ -594,6 +633,7 @@ export const adminCancelOrder = async (req, res) => {
       { new: true }
     )
       .populate("user", "name email")
+      .populate("delivery.pickupLocationId", PICKUP_LOCATION_SELECT)
       .lean();
 
     if (existingOrder.appliedReward?.rewardId && existingOrder.status !== "cancelled") {
@@ -611,7 +651,7 @@ export const adminCancelOrder = async (req, res) => {
     // if adminNote is undefined, mongoose won't remove old value. That’s ok.
     // If you want to clear adminNote when empty, handle it via PATCH.
 
-    res.json(updated);
+    res.json(await enrichOrdersWithLocations(req, updated));
   } catch (error) {
     console.error("❌ adminCancelOrder error:", error);
     res.status(500).json({ message: "Server error cancelling order" });

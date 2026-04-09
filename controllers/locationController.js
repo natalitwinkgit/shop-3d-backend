@@ -1,4 +1,9 @@
 import Location from "../models/Location.js";
+import {
+  buildLocationPresentation,
+  loadLocationTranslations,
+  resolveLocationLang,
+} from "../services/locationPresentationService.js";
 
 const LOCATION_TYPES = new Set(["shop", "showroom", "office", "warehouse"]);
 
@@ -61,34 +66,15 @@ const normalizeLocationPayload = (body = {}, { partial = false } = {}) => {
   return payload;
 };
 
-const formatLocation = (doc) => ({
-  _id: String(doc._id),
-  id: String(doc._id),
-  type: doc.type || "",
-  city: doc.city || "",
-  cityKey: doc.cityKey || toKey(doc.city),
-  name: doc.name || doc.nameKey || "",
-  nameKey: doc.nameKey || "",
-  address: doc.address || doc.addressKey || "",
-  addressKey: doc.addressKey || "",
-  coordinates: {
-    lat: Number(doc.coordinates?.lat || 0),
-    lng: Number(doc.coordinates?.lng || 0),
-  },
-  phone: doc.phone || "",
-  workingHours: {
-    ua: doc.workingHours?.ua || "",
-    en: doc.workingHours?.en || "",
-  },
-  isActive: !!doc.isActive,
-  createdAt: doc.createdAt,
-  updatedAt: doc.updatedAt,
-});
+const mapLocationsForResponse = async (req, docs = []) => {
+  const translations = await loadLocationTranslations(resolveLocationLang(req));
+  return docs.map((doc) => buildLocationPresentation(doc, translations));
+};
 
 export const getLocations = async (req, res) => {
   try {
     const locations = await Location.find({ isActive: true }).sort({ city: 1, type: 1 }).lean();
-    res.status(200).json(locations.map(formatLocation));
+    res.status(200).json(await mapLocationsForResponse(req, locations));
   } catch (error) {
     console.error("❌ Помилка в getLocations:", error.message);
     res.status(500).json({ message: "Помилка сервера при отриманні локацій" });
@@ -100,9 +86,10 @@ export const getAdminLocations = async (req, res) => {
     const onlyActive = req.query.active === "true";
     const filter = onlyActive ? { isActive: true } : {};
     const locations = await Location.find(filter).sort({ isActive: -1, city: 1, type: 1 }).lean();
+    const items = await mapLocationsForResponse(req, locations);
 
     res.status(200).json({
-      items: locations.map(formatLocation),
+      items,
       total: locations.length,
     });
   } catch (error) {
@@ -116,7 +103,8 @@ export const createLocation = async (req, res) => {
     const payload = normalizeLocationPayload(req.body, { partial: false });
     const newLoc = new Location(payload);
     await newLoc.save();
-    res.status(201).json(formatLocation(newLoc));
+    const [item] = await mapLocationsForResponse(req, [newLoc.toObject()]);
+    res.status(201).json(item);
   } catch (error) {
     console.error("❌ Помилка в createLocation:", error.message);
     res.status(error.statusCode || 400).json({ message: error.message });
@@ -136,7 +124,8 @@ export const updateLocation = async (req, res) => {
       return res.status(404).json({ message: "Локацію не знайдено" });
     }
 
-    res.json(formatLocation(updated));
+    const [item] = await mapLocationsForResponse(req, [updated]);
+    res.json(item);
   } catch (error) {
     console.error("❌ Помилка в updateLocation:", error.message);
     res.status(error.statusCode || 400).json({ message: error.message });
@@ -156,7 +145,8 @@ export const setLocationStatus = async (req, res) => {
       return res.status(404).json({ message: "Локацію не знайдено" });
     }
 
-    res.json(formatLocation(updated));
+    const [item] = await mapLocationsForResponse(req, [updated]);
+    res.json(item);
   } catch (error) {
     console.error("❌ Помилка в setLocationStatus:", error.message);
     res.status(error.statusCode || 400).json({ message: error.message });

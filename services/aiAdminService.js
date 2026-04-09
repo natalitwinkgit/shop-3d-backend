@@ -14,12 +14,19 @@ import User, {
 } from "../models/userModel.js";
 import { getExternalConversationHistory, loadAdminIndex } from "./adminChatService.js";
 import { createChatMessage } from "./chatMessageService.js";
+import {
+  buildLocationPresentation,
+  loadLocationTranslations,
+} from "./locationPresentationService.js";
 
 let openaiClient = null;
 
 const DEFAULT_OPENAI_MODEL = "gpt-5-mini";
 const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-lite";
 const MAX_TOOL_ROUNDS = 6;
+const AI_LOCATION_LANG = "ua";
+const LOCATION_SELECT =
+  "_id type city cityKey name nameKey address addressKey phone workingHours coordinates isActive";
 
 const clampInt = (value, min, max, fallback) => {
   const parsed = Number.parseInt(String(value ?? ""), 10);
@@ -314,6 +321,11 @@ const toSerializableMessage = (messageDoc) => {
     to: String(plain.receiver || ""),
   };
 };
+
+const getAiLocationTranslations = async () => loadLocationTranslations(AI_LOCATION_LANG);
+
+const presentAiLocation = (locationDoc, translations) =>
+  buildLocationPresentation(locationDoc || {}, translations);
 
 const getAiProvider = () => {
   const explicitProvider = pickStr(process.env.AI_PROVIDER).toLowerCase();
@@ -675,38 +687,48 @@ const buildPrefetchedProductSearch = async ({ history, chatUser }) => {
   };
 };
 
-const toOrderSummary = (orderDoc) => ({
-  id: String(orderDoc._id),
-  status: orderDoc.status,
-  createdAt: orderDoc.createdAt,
-  scheduledAt: orderDoc.scheduledAt || null,
-  customer: {
-    fullName: orderDoc.customer?.fullName || "",
-    phone: orderDoc.customer?.phone || "",
-    email: orderDoc.customer?.email || "",
-  },
-  delivery: {
-    method: orderDoc.delivery?.method || "",
-    city: orderDoc.delivery?.city || "",
-    address: orderDoc.delivery?.address || "",
-    npOffice: orderDoc.delivery?.npOffice || "",
-  },
-  totals: {
-    subtotal: Number(orderDoc.totals?.subtotal || 0),
-    cartTotal: Number(orderDoc.totals?.cartTotal || 0),
-    totalSavings: Number(orderDoc.totals?.totalSavings || 0),
-  },
-  adminNote: orderDoc.adminNote || "",
-  items: Array.isArray(orderDoc.items)
-    ? orderDoc.items.map((item) => ({
-        productId: String(item.productId || ""),
-        name: item.name || "",
-        qty: Number(item.qty || 0),
-        price: Number(item.price || 0),
-        sku: item.sku || "",
-      }))
-    : [],
-});
+const toOrderSummary = (orderDoc, translations) => {
+  const pickupLocationDoc = orderDoc?.delivery?.pickupLocationId;
+  const pickupLocation =
+    pickupLocationDoc && typeof pickupLocationDoc === "object"
+      ? presentAiLocation(pickupLocationDoc, translations)
+      : null;
+
+  return {
+    id: String(orderDoc._id),
+    status: orderDoc.status,
+    createdAt: orderDoc.createdAt,
+    scheduledAt: orderDoc.scheduledAt || null,
+    customer: {
+      fullName: orderDoc.customer?.fullName || "",
+      phone: orderDoc.customer?.phone || "",
+      email: orderDoc.customer?.email || "",
+    },
+    delivery: {
+      method: orderDoc.delivery?.method || "",
+      city: orderDoc.delivery?.city || "",
+      address: orderDoc.delivery?.address || "",
+      npOffice: orderDoc.delivery?.npOffice || "",
+      pickupLocationId: pickupLocation?.id || String(pickupLocationDoc || ""),
+      pickupLocation,
+    },
+    totals: {
+      subtotal: Number(orderDoc.totals?.subtotal || 0),
+      cartTotal: Number(orderDoc.totals?.cartTotal || 0),
+      totalSavings: Number(orderDoc.totals?.totalSavings || 0),
+    },
+    adminNote: orderDoc.adminNote || "",
+    items: Array.isArray(orderDoc.items)
+      ? orderDoc.items.map((item) => ({
+          productId: String(item.productId || ""),
+          name: item.name || "",
+          qty: Number(item.qty || 0),
+          price: Number(item.price || 0),
+          sku: item.sku || "",
+        }))
+      : [],
+  };
+};
 
 const toProductSummary = (productDoc) => ({
   id: String(productDoc._id),
@@ -800,13 +822,15 @@ const buildSearchOrdersToolResult = async ({ chatUser, query, status, limit }) =
     }
   }
 
+  const translations = await getAiLocationTranslations();
   const orders = await Order.find(filter)
     .sort({ createdAt: -1 })
     .limit(safeLimit)
+    .populate("delivery.pickupLocationId", LOCATION_SELECT)
     .lean();
 
   return {
-    items: orders.map(toOrderSummary),
+    items: orders.map((order) => toOrderSummary(order, translations)),
     count: orders.length,
   };
 };
@@ -901,8 +925,9 @@ const buildInventoryToolResult = async ({ productId }) => {
     return { items: [], error: "Invalid productId" };
   }
 
+  const translations = await getAiLocationTranslations();
   const rows = await Inventory.find({ product: productId })
-    .populate("location", "type city nameKey addressKey phone workingHours isActive")
+    .populate("location", LOCATION_SELECT)
     .lean();
 
   return {
@@ -910,16 +935,7 @@ const buildInventoryToolResult = async ({ productId }) => {
       id: String(row._id),
       productId: String(row.product || ""),
       locationId: String(row.location?._id || row.location || ""),
-      location: row.location
-        ? {
-            type: row.location.type || "",
-            city: row.location.city || "",
-            nameKey: row.location.nameKey || "",
-            addressKey: row.location.addressKey || "",
-            phone: row.location.phone || "",
-            isActive: !!row.location.isActive,
-          }
-        : null,
+      location: row.location ? presentAiLocation(row.location, translations) : null,
       onHand: Number(row.onHand || 0),
       reserved: Number(row.reserved || 0),
       available: Math.max(0, Number(row.onHand || 0) - Number(row.reserved || 0)),
@@ -933,22 +949,14 @@ const buildInventoryToolResult = async ({ productId }) => {
 
 const buildLocationsToolResult = async ({ onlyActive }) => {
   const filter = onlyActive === false ? {} : { isActive: true };
+  const translations = await getAiLocationTranslations();
   const locations = await Location.find(filter)
-    .select("_id type city nameKey addressKey phone workingHours isActive")
+    .select(LOCATION_SELECT)
     .sort({ city: 1, createdAt: -1 })
     .lean();
 
   return {
-    items: locations.map((locationDoc) => ({
-      id: String(locationDoc._id),
-      type: locationDoc.type || "",
-      city: locationDoc.city || "",
-      nameKey: locationDoc.nameKey || "",
-      addressKey: locationDoc.addressKey || "",
-      phone: locationDoc.phone || "",
-      workingHours: locationDoc.workingHours || {},
-      isActive: !!locationDoc.isActive,
-    })),
+    items: locations.map((locationDoc) => presentAiLocation(locationDoc, translations)),
     count: locations.length,
   };
 };
