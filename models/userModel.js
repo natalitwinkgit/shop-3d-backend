@@ -155,6 +155,18 @@ const loyaltySchema = new mongoose.Schema(
   { _id: false }
 );
 
+const addressSchema = new mongoose.Schema(
+  {
+    id: { type: String, required: true, trim: true },
+    label: { type: String, default: "", trim: true },
+    city: { type: String, default: "", trim: true },
+    addressLine: { type: String, default: "", trim: true },
+    comment: { type: String, default: "", trim: true },
+    isPrimary: { type: Boolean, default: false },
+  },
+  { _id: false }
+);
+
 const userSchema = new mongoose.Schema(
   {
     name: { type: String, trim: true, default: "" },
@@ -200,6 +212,8 @@ const userSchema = new mongoose.Schema(
       index: true,
     },
     city: { type: String, trim: true, default: "" },
+    avatar: { type: String, default: "" },
+    avatarUpdatedAt: { type: Date, default: null },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -228,6 +242,7 @@ const userSchema = new mongoose.Schema(
     lastLogoutAt: { type: Date, default: null },
     lastPage: { type: String, default: "" },
     likes: [likeSchema],
+    addresses: { type: [addressSchema], default: [] },
     orders: { type: [orderSchema], default: [] },
     loyalty: { type: loyaltySchema, default: () => ({}) },
     rewards: { type: [rewardSchema], default: [] },

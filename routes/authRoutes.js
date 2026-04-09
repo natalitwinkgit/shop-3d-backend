@@ -8,9 +8,16 @@ import {
   forgotPassword,    // Якщо є
   resetPassword      // Якщо є
 } from "../controllers/authController.js";
+import {
+  deleteMyAvatar,
+  getMyAddresses,
+  setMyAddresses,
+  updateMyAvatar,
+} from "../controllers/accountProfileController.js";
 
 import { protect } from "../middleware/authMiddleware.js";
 import { createRateLimit } from "../middleware/rateLimitMiddleware.js";
+import { avatarUploadFields } from "../services/accountProfileService.js";
 
 const router = express.Router();
 
@@ -46,6 +53,11 @@ router.post("/register", registerRateLimit, registerUser);
 router.post("/login", loginRateLimit, loginUser);
 router.get("/me", protect, getMe);
 router.patch("/me", protect, updateMe);
+router.get("/me/addresses", protect, getMyAddresses);
+router.put("/me/addresses", protect, setMyAddresses);
+router.patch("/me/addresses", protect, setMyAddresses);
+router.patch("/me/avatar", protect, avatarUploadFields, updateMyAvatar);
+router.delete("/me/avatar", protect, deleteMyAvatar);
 router.post("/logout", protect, logoutUser);
 
 // Якщо є маршрути для скидання пароля

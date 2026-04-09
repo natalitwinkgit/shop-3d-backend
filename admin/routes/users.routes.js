@@ -21,6 +21,11 @@ import {
   updateUserReward,
 } from "../../services/userProfileService.js";
 import {
+  deleteAdminUserAvatar,
+  updateAdminUserAvatar,
+} from "../../controllers/accountProfileController.js";
+import { avatarUploadFields } from "../../services/accountProfileService.js";
+import {
   assertActorCanManageUserProfile,
   ensureEmailIsUnique,
   ensurePhoneIsUnique,
@@ -165,6 +170,8 @@ router.get("/users", async (_req, res) => {
 });
 
 router.post("/users", requireSuperadmin, createAdminUserHandler);
+router.patch("/users/:id/avatar", avatarUploadFields, updateAdminUserAvatar);
+router.delete("/users/:id/avatar", deleteAdminUserAvatar);
 
 router.get("/users/:id", async (req, res) => {
   try {

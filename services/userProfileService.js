@@ -121,6 +121,29 @@ const buildLoyaltyResponse = (loyalty = {}, fallbackUserId = "") => ({
   manualOverride: !!loyalty?.manualOverride,
 });
 
+const buildAvatarResponse = (userDoc) => {
+  const avatar = pickStr(userDoc?.avatar);
+  return {
+    avatar,
+    avatarUrl: avatar,
+    photo: avatar,
+    photoUrl: avatar,
+    image: avatar,
+    imageUrl: avatar,
+    avatarUpdatedAt: userDoc?.avatarUpdatedAt || null,
+  };
+};
+
+const buildAddressesResponse = (addresses = []) =>
+  (Array.isArray(addresses) ? addresses : []).map((address, index) => ({
+    id: pickStr(address?.id) || `address_${index + 1}`,
+    label: pickStr(address?.label),
+    city: pickStr(address?.city),
+    addressLine: pickStr(address?.addressLine),
+    comment: pickStr(address?.comment),
+    isPrimary: !!address?.isPrimary,
+  }));
+
 const buildAdminUserResponse = (userDoc, { orderSummary = null, rewards = null } = {}) => {
   const { firstName, lastName } = splitUserName(userDoc?.name);
   const normalizedRewards = rewards || normalizeRewards(userDoc?.rewards || []);
@@ -136,6 +159,7 @@ const buildAdminUserResponse = (userDoc, { orderSummary = null, rewards = null }
     email: pickStr(userDoc?.email),
     phone: pickStr(userDoc?.phone),
     city: pickStr(userDoc?.city),
+    ...buildAvatarResponse(userDoc),
     role: pickStr(userDoc?.role) || "user",
     status: pickStr(userDoc?.status) || "active",
     isAiAssistant: !!userDoc?.isAiAssistant,
@@ -148,6 +172,7 @@ const buildAdminUserResponse = (userDoc, { orderSummary = null, rewards = null }
     lastLogoutAt: userDoc?.lastLogoutAt || null,
     lastPage: pickStr(userDoc?.lastPage),
     likesCount: Array.isArray(userDoc?.likes) ? userDoc.likes.length : 0,
+    addresses: buildAddressesResponse(userDoc?.addresses),
     loyalty: buildLoyaltyResponse(userDoc?.loyalty, userDoc?._id || userDoc?.id),
     rewards: normalizedRewards,
     rewardsSummary: {
@@ -174,17 +199,20 @@ export const buildPublicUserResponse = (userDoc) => {
 
   return {
     id: String(userDoc?._id || userDoc?.id || ""),
+    _id: String(userDoc?._id || userDoc?.id || ""),
     firstName,
     lastName,
     name: pickStr(userDoc?.name),
     email: pickStr(userDoc?.email),
     phone: pickStr(userDoc?.phone),
     city: pickStr(userDoc?.city),
+    ...buildAvatarResponse(userDoc),
     role: pickStr(userDoc?.role) || "user",
     status: pickStr(userDoc?.status) || "active",
     isOnline: presence !== "offline",
     presence,
     lastSeen: userDoc?.lastSeen || null,
+    addresses: buildAddressesResponse(userDoc?.addresses),
     loyalty: buildLoyaltyResponse(userDoc?.loyalty, userDoc?._id || userDoc?.id),
     rewards,
     rewardsSummary: {

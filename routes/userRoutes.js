@@ -1,6 +1,13 @@
 import express from "express";
 import { protect } from "../middleware/authMiddleware.js";
 import {
+  deleteMyAvatar,
+  getMyAddresses,
+  setMyAddresses,
+  updateMyAvatar,
+} from "../controllers/accountProfileController.js";
+import { avatarUploadFields } from "../services/accountProfileService.js";
+import {
   buildPublicUserResponse,
   markUserOffline,
   normalizePresenceInput,
@@ -8,6 +15,12 @@ import {
 } from "../services/userProfileService.js";
 
 const router = express.Router();
+
+router.get("/me/addresses", protect, getMyAddresses);
+router.put("/me/addresses", protect, setMyAddresses);
+router.patch("/me/addresses", protect, setMyAddresses);
+router.patch("/me/avatar", protect, avatarUploadFields, updateMyAvatar);
+router.delete("/me/avatar", protect, deleteMyAvatar);
 
 // PATCH /api/users/status
 router.patch("/status", protect, async (req, res) => {
