@@ -13,6 +13,7 @@ import Order from "../models/Order.js";
 import Product from "../models/Product.js";
 import Review from "../models/Review.js";
 import SubCategory from "../models/SubCategory.js";
+import Translation from "../models/Translation.js";
 import User, { ADMIN_ROLES } from "../models/userModel.js";
 import { syncUserCommerceData } from "../services/userProfileService.js";
 
@@ -27,7 +28,7 @@ const escapeRegex = (value) =>
 
 const seedPrefixRegex = new RegExp(`^${escapeRegex(SEED_PREFIX)}`, "i");
 const seedEmailRegex = new RegExp(`@${escapeRegex(SEED_DOMAIN)}$`, "i");
-const seedLocationRegex = /^demo\./i;
+const seedLocationRegex = /^demo[_\.]/i;
 const seedTextRegex = new RegExp(`^\\[${escapeRegex(SEED_TAG)}\\]`);
 
 const daysAgo = (days, hour = 11) => {
@@ -94,7 +95,7 @@ const categoryDefs = [
   },
 ];
 
-const productDefs = [
+const baseProductDefs = [
   {
     slug: "demo-sofa-nova",
     nameUa: "Nova Sofa",
@@ -253,45 +254,228 @@ const productDefs = [
   },
 ];
 
+const normalizeKey = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+const canonicalizeRoomKey = (value) => {
+  const normalized = normalizeKey(value);
+  const roomAliases = {
+    living_room: ["living_room", "living-room", "livingroom"],
+    bedroom: ["bedroom", "bed-room", "bed_room"],
+    dining_room: ["dining_room", "dining-room", "diningroom"],
+    home_office: ["home_office", "home-office", "office"],
+  };
+
+  const found = Object.entries(roomAliases).find(([, aliases]) => aliases.includes(normalized));
+  return found?.[0] || normalized;
+};
+
+const pickMaterialKeys = (product) => {
+  const source = JSON.stringify(product.specifications || {}).toLowerCase();
+  const materialKeys = [];
+
+  if (/(velvet|velour)/.test(source)) materialKeys.push("velour");
+  if (/(boucle|linen|weave|textile|upholstery)/.test(source)) materialKeys.push("textile");
+  if (/(oak|walnut|ash|wood|veneer)/.test(source)) materialKeys.push("wood");
+  if (/mdf/.test(source)) materialKeys.push("mdf");
+  if (/(steel|metal)/.test(source)) materialKeys.push("metal");
+  if (/(stone|travertine)/.test(source)) materialKeys.push("stone");
+
+  return Array.from(new Set(materialKeys.length ? materialKeys : ["textile"]));
+};
+
+const pickManufacturerKey = (product) => {
+  if (product.category === "demo-sofas" || product.category === "demo-beds") return "soft_form";
+  if (product.category === "demo-tables") return "woodline";
+  return "comfort_lab";
+};
+
+const buildProductImages = (product, variantLabel = "") => {
+  const base = [product.nameEn, variantLabel].filter(Boolean).join(" ");
+  return [
+    placeholderImage(`${base} hero shot`),
+    placeholderImage(`${base} lifestyle view`),
+    placeholderImage(`${base} close-up texture`),
+    placeholderImage(`${base} dimensions card`),
+  ];
+};
+
+const buildDescriptions = (product, materialKeys, variantLabel = "") => {
+  const variantText = variantLabel ? ` ${variantLabel}` : "";
+  const roomLabel = product.roomKeys.map(canonicalizeRoomKey).join(", ");
+
+  return {
+    ua:
+      `${product.nameUa}${variantText} створений для щоденного використання у сучасному інтер'єрі. ` +
+      `Модель підходить для зон ${roomLabel}, має збалансовану посадку, практичні матеріали ${materialKeys.join(", ")} ` +
+      `та характеристику ${Object.entries(product.specifications || {})
+        .slice(0, 3)
+        .map(([key, value]) => `${key}: ${value}`)
+        .join(", ")}.`,
+    en:
+      `${product.nameEn}${variantText} is built for everyday use in a modern interior. ` +
+      `It works well in ${roomLabel}, combines durable ${materialKeys.join(", ")} materials, and keeps the key specs visible for storefront and admin QA.`,
+  };
+};
+
+const variantDescriptors = [
+  { slugSuffix: "atelier", labelUa: "Atelier", labelEn: "Atelier", priceDelta: 3500, discountDelta: 2 },
+  { slugSuffix: "studio", labelUa: "Studio", labelEn: "Studio", priceDelta: 2200, discountDelta: 0 },
+];
+
+const expandProductDefs = (defs = []) =>
+  defs.flatMap((product, index) => {
+    const materialKeys = pickMaterialKeys(product);
+    const baseCollectionKey = normalizeKey(
+      `${product.category.replace(/^demo-/, "")}_${canonicalizeRoomKey(product.roomKeys[0] || "living_room")}`
+    );
+    const manufacturerKey = pickManufacturerKey(product);
+    const descriptor = variantDescriptors[index % variantDescriptors.length];
+    const baseProduct = {
+      ...product,
+      roomKeys: product.roomKeys.map(canonicalizeRoomKey),
+      materialKeys,
+      manufacturerKey,
+      collectionKeys: Array.from(new Set([baseCollectionKey, "demo-curated"])),
+      featureKeys: Array.from(
+        new Set([
+          "made_in_ukraine",
+          materialKeys.includes("velour") ? "premium_fabric" : "easy_care",
+          product.discount > 0 ? "promo" : "new_arrival",
+        ])
+      ),
+      images: buildProductImages(product),
+      description: buildDescriptions(product, materialKeys),
+    };
+
+    const variantMaterialKeys = Array.from(new Set([...materialKeys, index % 2 === 0 ? "wood" : "textile"]));
+    const variantProduct = {
+      ...product,
+      slug: `${product.slug}-${descriptor.slugSuffix}`,
+      nameUa: `${product.nameUa} ${descriptor.labelUa}`,
+      nameEn: `${product.nameEn} ${descriptor.labelEn}`,
+      price: product.price + descriptor.priceDelta,
+      discount: Math.min(20, product.discount + descriptor.discountDelta),
+      colorKeys: Array.from(new Set([...product.colorKeys, index % 2 === 0 ? "walnut" : "cream"])),
+      styleKeys: Array.from(new Set([...product.styleKeys, "signature"])),
+      roomKeys: Array.from(
+        new Set([
+          ...product.roomKeys.map(canonicalizeRoomKey),
+          product.category === "demo-tables" ? "home_office" : product.category === "demo-chairs" ? "bedroom" : canonicalizeRoomKey(product.roomKeys[0]),
+        ])
+      ),
+      specifications: {
+        ...(product.specifications || {}),
+        edition: descriptor.labelEn,
+        leadTimeDays: 7 + (index % 6),
+      },
+      materialKeys: variantMaterialKeys,
+      manufacturerKey,
+      collectionKeys: Array.from(new Set([baseCollectionKey, "demo-signature"])),
+      featureKeys: ["made_in_ukraine", "signature", "ready_to_ship"],
+      images: buildProductImages(product, descriptor.labelEn),
+      description: buildDescriptions(product, variantMaterialKeys, descriptor.labelEn),
+    };
+
+    return [baseProduct, variantProduct];
+  });
+
+const productDefs = expandProductDefs(baseProductDefs);
+
 const locationDefs = [
   {
     type: "showroom",
     city: "Kyiv",
-    nameKey: "demo.Kyiv Showroom",
-    addressKey: "Kyiv, Khreshchatyk 12",
+    cityKey: "kyiv",
+    name: "Kyiv Flagship Showroom",
+    nameKey: "demo_kyiv_flagship_showroom",
+    address: "Kyiv, Khreshchatyk 12",
+    addressKey: "demo_kyiv_flagship_showroom_address",
     coordinates: { lat: 50.4501, lng: 30.5234 },
     phone: "+380441110001",
-    workingHours: { ua: "10:00-20:00", en: "10:00-20:00" },
+    workingHours: { ua: "Пн-Нд 10:00-20:00", en: "Mon-Sun 10:00-20:00" },
     isActive: true,
   },
   {
     type: "warehouse",
     city: "Kyiv",
-    nameKey: "demo.Kyiv Warehouse",
-    addressKey: "Kyiv, Pivnichna 8",
+    cityKey: "kyiv",
+    name: "Kyiv Central Warehouse",
+    nameKey: "demo_kyiv_central_warehouse",
+    address: "Kyiv, Pivnichna 8",
+    addressKey: "demo_kyiv_central_warehouse_address",
     coordinates: { lat: 50.485, lng: 30.49 },
     phone: "+380441110002",
-    workingHours: { ua: "09:00-18:00", en: "09:00-18:00" },
+    workingHours: { ua: "Пн-Сб 09:00-18:00", en: "Mon-Sat 09:00-18:00" },
     isActive: true,
   },
   {
     type: "shop",
     city: "Lviv",
-    nameKey: "demo.Lviv Shop",
-    addressKey: "Lviv, Horodotska 88",
+    cityKey: "lviv",
+    name: "Lviv City Store",
+    nameKey: "demo_lviv_city_store",
+    address: "Lviv, Horodotska 88",
+    addressKey: "demo_lviv_city_store_address",
     coordinates: { lat: 49.8397, lng: 24.0297 },
     phone: "+380321110003",
-    workingHours: { ua: "10:00-19:00", en: "10:00-19:00" },
+    workingHours: { ua: "Пн-Нд 10:00-19:00", en: "Mon-Sun 10:00-19:00" },
+    isActive: true,
+  },
+  {
+    type: "warehouse",
+    city: "Lviv",
+    cityKey: "lviv",
+    name: "Lviv Stock Hub",
+    nameKey: "demo_lviv_stock_hub",
+    address: "Lviv, Zelena 147",
+    addressKey: "demo_lviv_stock_hub_address",
+    coordinates: { lat: 49.814, lng: 24.0558 },
+    phone: "+380321110004",
+    workingHours: { ua: "Пн-Сб 09:00-18:00", en: "Mon-Sat 09:00-18:00" },
+    isActive: true,
+  },
+  {
+    type: "showroom",
+    city: "Odesa",
+    cityKey: "odesa",
+    name: "Odesa Coastal Showroom",
+    nameKey: "demo_odesa_coastal_showroom",
+    address: "Odesa, Kanatna 14",
+    addressKey: "demo_odesa_coastal_showroom_address",
+    coordinates: { lat: 46.4825, lng: 30.7233 },
+    phone: "+380481110005",
+    workingHours: { ua: "Пн-Нд 10:00-19:00", en: "Mon-Sun 10:00-19:00" },
+    isActive: true,
+  },
+  {
+    type: "shop",
+    city: "Dnipro",
+    cityKey: "dnipro",
+    name: "Dnipro Family Store",
+    nameKey: "demo_dnipro_family_store",
+    address: "Dnipro, Dmytra Yavornytskoho 54",
+    addressKey: "demo_dnipro_family_store_address",
+    coordinates: { lat: 48.4647, lng: 35.0462 },
+    phone: "+380561110006",
+    workingHours: { ua: "Пн-Нд 10:00-19:00", en: "Mon-Sun 10:00-19:00" },
     isActive: true,
   },
   {
     type: "office",
     city: "Odesa",
-    nameKey: "demo.Odesa Office",
-    addressKey: "Odesa, Kanatna 14",
-    coordinates: { lat: 46.4825, lng: 30.7233 },
-    phone: "+380481110004",
-    workingHours: { ua: "09:00-17:00", en: "09:00-17:00" },
+    cityKey: "odesa",
+    name: "Odesa Service Office",
+    nameKey: "demo_odesa_service_office",
+    address: "Odesa, Uspenska 21",
+    addressKey: "demo_odesa_service_office_address",
+    coordinates: { lat: 46.4772, lng: 30.7326 },
+    phone: "+380481110007",
+    workingHours: { ua: "Пн-Пт 09:00-17:00", en: "Mon-Fri 09:00-17:00" },
     isActive: false,
   },
 ];
@@ -303,7 +487,110 @@ const userDefs = [
   { name: "Maksym Shevchuk", email: `maksym@${SEED_DOMAIN}`, phone: "+380500000104", city: "Odesa", status: "active" },
   { name: "Sofiia Kravets", email: `sofiia@${SEED_DOMAIN}`, phone: "+380500000105", city: "Kharkiv", status: "active" },
   { name: "Andrii Hnatiuk", email: `andrii@${SEED_DOMAIN}`, phone: "+380500000106", city: "Vinnytsia", status: "banned" },
+  { name: "Kateryna Dovhan", email: `kateryna@${SEED_DOMAIN}`, phone: "+380500000107", city: "Kyiv", status: "active" },
+  { name: "Bohdan Savchuk", email: `bohdan@${SEED_DOMAIN}`, phone: "+380500000108", city: "Lutsk", status: "active" },
+  { name: "Mariia Tkach", email: `mariia@${SEED_DOMAIN}`, phone: "+380500000109", city: "Rivne", status: "active" },
+  { name: "Roman Verbytskyi", email: `roman@${SEED_DOMAIN}`, phone: "+380500000110", city: "Cherkasy", status: "active" },
 ];
+
+const DEMO_LOCATION_TRANSLATIONS = {
+  ua: {
+    types: {
+      showroom: "Шоурум",
+      warehouse: "Склад",
+      shop: "Магазин",
+      office: "Офіс",
+    },
+    names: {
+      demo_kyiv_flagship_showroom: "Флагманський шоурум Київ",
+      demo_kyiv_central_warehouse: "Центральний склад Київ",
+      demo_lviv_city_store: "Магазин Львів Центр",
+      demo_lviv_stock_hub: "Склад Львів Хаб",
+      demo_odesa_coastal_showroom: "Шоурум Одеса Узбережжя",
+      demo_dnipro_family_store: "Сімейний магазин Дніпро",
+      demo_odesa_service_office: "Сервісний офіс Одеса",
+    },
+    addresses: {
+      demo_kyiv_flagship_showroom_address: "Київ, Хрещатик 12",
+      demo_kyiv_central_warehouse_address: "Київ, Північна 8",
+      demo_lviv_city_store_address: "Львів, Городоцька 88",
+      demo_lviv_stock_hub_address: "Львів, Зелена 147",
+      demo_odesa_coastal_showroom_address: "Одеса, Канатна 14",
+      demo_dnipro_family_store_address: "Дніпро, Дмитра Яворницького 54",
+      demo_odesa_service_office_address: "Одеса, Успенська 21",
+    },
+    cities: {
+      kyiv: "Київ",
+      lviv: "Львів",
+      odesa: "Одеса",
+      dnipro: "Дніпро",
+    },
+  },
+  en: {
+    types: {
+      showroom: "Showroom",
+      warehouse: "Warehouse",
+      shop: "Shop",
+      office: "Office",
+    },
+    names: {
+      demo_kyiv_flagship_showroom: "Kyiv Flagship Showroom",
+      demo_kyiv_central_warehouse: "Kyiv Central Warehouse",
+      demo_lviv_city_store: "Lviv City Store",
+      demo_lviv_stock_hub: "Lviv Stock Hub",
+      demo_odesa_coastal_showroom: "Odesa Coastal Showroom",
+      demo_dnipro_family_store: "Dnipro Family Store",
+      demo_odesa_service_office: "Odesa Service Office",
+    },
+    addresses: {
+      demo_kyiv_flagship_showroom_address: "Kyiv, Khreshchatyk 12",
+      demo_kyiv_central_warehouse_address: "Kyiv, Pivnichna 8",
+      demo_lviv_city_store_address: "Lviv, Horodotska 88",
+      demo_lviv_stock_hub_address: "Lviv, Zelena 147",
+      demo_odesa_coastal_showroom_address: "Odesa, Kanatna 14",
+      demo_dnipro_family_store_address: "Dnipro, Dmytra Yavornytskoho 54",
+      demo_odesa_service_office_address: "Odesa, Uspenska 21",
+    },
+    cities: {
+      kyiv: "Kyiv",
+      lviv: "Lviv",
+      odesa: "Odesa",
+      dnipro: "Dnipro",
+    },
+  },
+};
+
+const buildTranslationFieldOps = (payload = {}, mode = "set") =>
+  Object.entries(payload).reduce((acc, [section, values]) => {
+    Object.keys(values || {}).forEach((key) => {
+      acc[`locations.${section}.${key}`] = mode === "unset" ? "" : values[key];
+    });
+    return acc;
+  }, {});
+
+async function clearDemoTranslations() {
+  await Promise.all(
+    Object.entries(DEMO_LOCATION_TRANSLATIONS).map(([lang, payload]) =>
+      Translation.updateOne(
+        { lang },
+        { $unset: buildTranslationFieldOps(payload, "unset") },
+        { upsert: false }
+      )
+    )
+  );
+}
+
+async function syncDemoTranslations() {
+  await Promise.all(
+    Object.entries(DEMO_LOCATION_TRANSLATIONS).map(([lang, payload]) =>
+      Translation.updateOne(
+        { lang },
+        { $set: buildTranslationFieldOps(payload, "set") },
+        { upsert: true }
+      )
+    )
+  );
+}
 
 async function clearDemoData() {
   const [seedUsers, seedProducts, seedLocations, seedCategories] = await Promise.all([
@@ -363,6 +650,8 @@ async function clearDemoData() {
     Location.deleteMany({ _id: { $in: locationIds } }),
     User.deleteMany({ _id: { $in: userIds } }),
   ]);
+
+  await clearDemoTranslations();
 }
 
 async function resolveChatAdmin(passwordHash) {
@@ -472,22 +761,28 @@ async function seedLocations() {
 async function seedProducts() {
   const docs = productDefs.map((product, index) => ({
     name: { ua: product.nameUa, en: product.nameEn },
-    description: {
-      ua: `Demo item for admin and storefront checks: ${product.nameUa}.`,
-      en: `Demo item for admin and storefront checks: ${product.nameEn}.`,
-    },
+    description: product.description,
     slug: product.slug,
     category: product.category,
     subCategory: product.subCategory,
     typeKey: `${product.category}:${product.subCategory}`,
-    images: [placeholderImage(product.nameEn)],
+    images: product.images,
     modelUrl: "",
     styleKeys: product.styleKeys,
     colorKeys: product.colorKeys,
     roomKeys: product.roomKeys,
-    collectionKeys: ["demo-collection"],
-    featureKeys: ["demo", "seeded"],
-    specifications: product.specifications,
+    collectionKeys: product.collectionKeys,
+    featureKeys: product.featureKeys,
+    specifications: {
+      ...(product.specifications || {}),
+      materialKey: product.materialKeys?.[0] || "",
+      materialKeys: product.materialKeys || [],
+      materials: (product.materialKeys || []).map((key) => ({ key, label: key.replace(/_/g, " ") })),
+      manufacturerKey: product.manufacturerKey || "",
+      countryOfOrigin: "Ukraine",
+      warrantyMonths: 24,
+      leadTimeDays: product.specifications?.leadTimeDays || 5 + (index % 6),
+    },
     price: product.price,
     discount: product.discount,
     inStock: true,
@@ -495,14 +790,23 @@ async function seedProducts() {
     status: "active",
     ratingAvg: 0,
     ratingCount: 0,
-    createdAt: daysAgo(20 - index),
-    updatedAt: daysAgo(4 - (index % 4)),
+    createdAt: daysAgo(160 - index * 4),
+    updatedAt: daysAgo(12 - (index % 8)),
   }));
 
   return Product.insertMany(docs);
 }
 
 async function seedUsers(passwordHash) {
+  const loyaltyByIndex = [
+    { tier: "gold", baseDiscountPct: 7 },
+    { tier: "silver", baseDiscountPct: 4 },
+    { tier: "none", baseDiscountPct: 0 },
+    { tier: "silver", baseDiscountPct: 4 },
+    { tier: "gold", baseDiscountPct: 7 },
+    { tier: "none", baseDiscountPct: 0 },
+  ];
+
   const docs = userDefs.map((user, index) => ({
     name: user.name,
     email: user.email,
@@ -513,25 +817,46 @@ async function seedUsers(passwordHash) {
     status: user.status,
     city: user.city,
     likes: [],
+    addresses:
+      user.status === "active"
+        ? [
+            {
+              id: `addr-${index + 1}-home`,
+              label: "Home",
+              city: user.city,
+              addressLine: `${user.city}, Demo avenue ${index + 10}`,
+              comment: "Main test address",
+              isPrimary: true,
+            },
+            {
+              id: `addr-${index + 1}-work`,
+              label: "Office",
+              city: user.city,
+              addressLine: `${user.city}, Business street ${index + 20}`,
+              comment: "Secondary delivery point",
+              isPrimary: false,
+            },
+          ]
+        : [],
     rewards: [],
     loyalty: {
       cardNumber: buildCardNumber(index),
-      tier: "none",
-      baseDiscountPct: 0,
+      tier: loyaltyByIndex[index % loyaltyByIndex.length].tier,
+      baseDiscountPct: loyaltyByIndex[index % loyaltyByIndex.length].baseDiscountPct,
       totalSpent: 0,
       completedOrders: 0,
-      lastOrderAt: null,
+      lastOrderAt: index < 5 ? daysAgo(20 - index * 2) : null,
       notes: "",
       manualOverride: false,
     },
     isAiAssistant: false,
-    isOnline: index < 2,
-    presence: index < 2 ? "online" : "offline",
-    lastSeen: index < 2 ? daysAgo(0, 12 + index) : daysAgo(2 + index),
-    lastActivityAt: index < 2 ? daysAgo(0, 12 + index) : daysAgo(2 + index),
+    isOnline: index < 3,
+    presence: index < 3 ? "online" : index < 6 ? "away" : "offline",
+    lastSeen: index < 3 ? daysAgo(0, 12 + index) : daysAgo(2 + index),
+    lastActivityAt: index < 3 ? daysAgo(0, 12 + index) : daysAgo(2 + index),
     lastLoginAt: daysAgo(1 + index),
-    createdAt: daysAgo(18 - index),
-    updatedAt: daysAgo(3 - (index % 3)),
+    createdAt: daysAgo(140 - index * 7),
+    updatedAt: daysAgo(5 - (index % 5)),
   }));
 
   return User.insertMany(docs);
@@ -541,8 +866,8 @@ async function seedLikes(users, products) {
   const likeDocs = [];
   const bulkOps = [];
 
-  users.slice(0, 4).forEach((user, index) => {
-    const likedProducts = [products[index], products[index + 4]];
+  users.slice(0, 8).forEach((user, index) => {
+    const likedProducts = [products[index], products[index + 4], products[(index + 9) % products.length]];
     const embeddedLikes = likedProducts.map((product) => ({
       productId: String(product._id),
       productName: product.name,
@@ -568,8 +893,8 @@ async function seedLikes(users, products) {
         productCategory: product.category,
         price: Number(product.price || 0),
         discount: Number(product.discount || 0),
-        createdAt: daysAgo(6 - index),
-        updatedAt: daysAgo(2 - index),
+        createdAt: daysAgo(Math.max(1, 12 - index)),
+        updatedAt: daysAgo(Math.max(0, 4 - index)),
       });
     });
   });
@@ -578,13 +903,14 @@ async function seedLikes(users, products) {
 }
 
 async function seedCarts(users, products) {
-  const docs = users.slice(0, 4).map((user, index) => ({
+  const docs = users.slice(0, 6).map((user, index) => ({
     user: user._id,
     items: [
       { product: products[index]._id, qty: 1 + (index % 2) },
       { product: products[index + 2]._id, qty: 1 },
+      { product: products[(index + 7) % products.length]._id, qty: 1 + (index % 3 === 0 ? 1 : 0) },
     ],
-    createdAt: daysAgo(4 - index),
+    createdAt: daysAgo(Math.max(1, 8 - index)),
     updatedAt: daysAgo(index),
   }));
 
@@ -592,19 +918,31 @@ async function seedCarts(users, products) {
 }
 
 async function seedInventory(products, locations, admin) {
-  const showroom = locations.find((location) => location.type === "showroom");
-  const warehouse = locations.find((location) => location.type === "warehouse");
-  const shop = locations.find((location) => location.type === "shop");
+  const warehouses = locations.filter((location) => location.type === "warehouse");
+  const salesPoints = locations.filter((location) => ["showroom", "shop"].includes(location.type));
   const rows = [];
   const movements = [];
 
   products.forEach((product, index) => {
-    const locationPool = index % 2 === 0 ? [warehouse, showroom] : [warehouse, shop];
+    const primaryWarehouse = warehouses[index % warehouses.length];
+    const primarySalesPoint = salesPoints[index % salesPoints.length];
+    const secondarySalesPoint = salesPoints[(index + 2) % salesPoints.length];
+    const locationPool = [primaryWarehouse, primarySalesPoint];
+
+    if (index % 3 === 0 && secondarySalesPoint?._id && String(secondarySalesPoint._id) !== String(primarySalesPoint._id)) {
+      locationPool.push(secondarySalesPoint);
+    }
 
     locationPool.forEach((location, rowIndex) => {
-      const onHand = Math.max(0, 3 + ((index + 2) * (rowIndex + 1)) % 11);
-      const reserved = Math.min(onHand, (index + rowIndex) % 3);
+      const onHand = Math.max(0, 4 + ((index + 3) * (rowIndex + 2)) % 15);
+      const reserved = Math.min(onHand, (index + rowIndex) % 4);
       const isShowcase = rowIndex === 1 && location.type !== "warehouse" && index % 3 === 0;
+      const zone =
+        rowIndex === 0
+          ? `WH-${String((index % 5) + 1).padStart(2, "0")}`
+          : isShowcase
+            ? "SHOW"
+            : `SHOP-${String((index % 4) + 1).padStart(2, "0")}`;
 
       rows.push({
         product: product._id,
@@ -613,8 +951,8 @@ async function seedInventory(products, locations, admin) {
         locationId: location._id,
         onHand,
         reserved,
-        zone: rowIndex === 0 ? "A-01" : "SHOW",
-        note: `[${SEED_TAG}] Demo inventory row`,
+        zone,
+        note: `[${SEED_TAG}] Demo inventory row for ${location.city}`,
         isShowcase,
         createdAt: daysAgo(12 - rowIndex),
         updatedAt: daysAgo(index % 5),
@@ -633,7 +971,7 @@ async function seedInventory(products, locations, admin) {
         previousReserved: 0,
         nextReserved: reserved,
         quantity: onHand,
-        zone: rowIndex === 0 ? "A-01" : "SHOW",
+        zone,
         note: `[${SEED_TAG}] Initial stock fill`,
         isShowcase,
         actorId: String(admin._id),
@@ -696,31 +1034,30 @@ async function seedOrders(users, products, locations) {
   const pickupLocations = locations.filter((location) =>
     ["showroom", "shop"].includes(location.type)
   );
-  const statuses = [
-    "new",
-    "confirmed",
-    "processing",
+  const statusCycle = [
+    "completed",
+    "completed",
     "shipped",
-    "completed",
-    "completed",
+    "processing",
+    "confirmed",
+    "new",
     "cancelled",
     "processing",
-    "new",
     "completed",
-    "confirmed",
-    "shipped",
   ];
+  const totalOrders = 36;
 
-  const docs = statuses.map((status, index) => {
+  const docs = Array.from({ length: totalOrders }, (_item, index) => {
+    const status = statusCycle[index % statusCycle.length];
     const user = activeUsers[index % activeUsers.length];
-    const itemCount = 1 + (index % 3);
+    const itemCount = 1 + (index % 4);
     const methodIndex = index % 3;
     const selectedProducts = Array.from({ length: itemCount }, (_item, itemIndex) =>
-      products[(index + itemIndex * 2) % products.length]
+      products[(index * 2 + itemIndex * 3) % products.length]
     );
 
     const items = selectedProducts.map((product, itemIndex) => {
-      const qty = 1 + ((index + itemIndex) % 2);
+      const qty = 1 + ((index + itemIndex) % 3);
       const price = computeDiscountedPrice(product);
 
       return {
@@ -728,7 +1065,7 @@ async function seedOrders(users, products, locations) {
         name: product.name.ua,
         qty,
         price,
-        sku: "",
+        sku: `${product.slug.toUpperCase().slice(0, 18)}-${itemIndex + 1}`,
         image: product.images?.[0] || "",
       };
     });
@@ -736,7 +1073,12 @@ async function seedOrders(users, products, locations) {
     const subtotal = items.reduce((sum, item) => sum + item.qty * item.price, 0);
     const pickupLocation = pickupLocations[index % pickupLocations.length];
     const method = methodIndex === 0 ? "pickup" : methodIndex === 1 ? "courier" : "nova_poshta";
-    const createdAt = daysAgo(16 - index, 9 + (index % 6));
+    const createdAt = daysAgo(Math.max(1, 110 - index * 3), 9 + (index % 6));
+    const loyaltyDiscount = Math.round(
+      subtotal * Math.max(0, Number(user.loyalty?.baseDiscountPct || 0)) / 100
+    );
+    const rewardDiscount = status !== "cancelled" && index % 8 === 0 ? 700 : 0;
+    const cartTotal = Math.max(0, subtotal - loyaltyDiscount - rewardDiscount);
 
     return {
       user: user._id,
@@ -756,34 +1098,49 @@ async function seedOrders(users, products, locations) {
       items,
       totals: {
         subtotal,
-        loyaltyDiscount: 0,
-        rewardDiscount: 0,
-        totalSavings: 0,
-        cartTotal: subtotal,
+        loyaltyDiscount,
+        rewardDiscount,
+        totalSavings: loyaltyDiscount + rewardDiscount,
+        cartTotal,
       },
       loyaltySnapshot: {
         cardNumber: buildCardNumber(index % activeUsers.length),
-        tier: "none",
-        baseDiscountPct: 0,
+        tier: user.loyalty?.tier || "none",
+        baseDiscountPct: Number(user.loyalty?.baseDiscountPct || 0),
       },
-      appliedReward: {
-        rewardId: "",
-        type: "",
-        title: "",
-        discountPct: 0,
-        amountOff: 0,
-        minOrderTotal: 0,
-      },
+      appliedReward:
+        rewardDiscount > 0
+          ? {
+              rewardId: `seed-reward-${index + 1}`,
+              type: "manual_discount",
+              title: "Seeded promo voucher",
+              discountPct: 0,
+              amountOff: rewardDiscount,
+              minOrderTotal: 0,
+            }
+          : {
+              rewardId: "",
+              type: "",
+              title: "",
+              discountPct: 0,
+              amountOff: 0,
+              minOrderTotal: 0,
+            },
       status,
       scheduledAt:
-        status === "confirmed" || status === "processing" ? daysAhead((index % 3) + 1) : null,
+        status === "confirmed" || status === "processing"
+          ? new Date(createdAt.getTime() + ((index % 4) + 1) * 24 * 60 * 60 * 1000)
+          : null,
       adminNote:
         status === "cancelled"
           ? `[${SEED_TAG}] Customer postponed the purchase`
           : status === "processing" || status === "shipped"
-            ? `[${SEED_TAG}] Priority handling`
+            ? `[${SEED_TAG}] Priority handling for city ${user.city}`
             : "",
-      cancelledAt: status === "cancelled" ? daysAgo(2) : null,
+      cancelledAt:
+        status === "cancelled"
+          ? new Date(createdAt.getTime() + 2 * 24 * 60 * 60 * 1000)
+          : null,
       createdAt,
       updatedAt: new Date(createdAt.getTime() + 6 * 60 * 60 * 1000),
     };
@@ -831,18 +1188,37 @@ async function syncOrderLoyaltySnapshots(loyaltyUsers) {
 
 async function seedReviews(users, products) {
   const activeUsers = users.filter((user) => user.status === "active");
-  const ratings = [5, 4, 5, 3, 4, 5, 4, 5];
+  const reviewTitles = [
+    "Looks premium in person",
+    "Good value for the size",
+    "Delivery was on time",
+    "Comfort is better than expected",
+    "Solid quality for daily use",
+    "Fits the room perfectly",
+  ];
 
-  const docs = ratings.map((rating, index) => ({
-    product: products[index]._id,
-    user: activeUsers[index % activeUsers.length]._id,
-    rating,
-    title: `Demo review ${index + 1}`,
-    text: `Seeded review for ${products[index].name.en}. Useful for testing review lists and rating widgets.`,
-    isApproved: true,
-    createdAt: daysAgo(10 - index),
-    updatedAt: daysAgo(4 - (index % 4)),
-  }));
+  const docs = products.slice(0, 20).flatMap((product, productIndex) => {
+    const reviewsPerProduct = 1 + (productIndex % 3);
+
+    return Array.from({ length: reviewsPerProduct }, (_item, reviewIndex) => {
+      const rating = 3 + ((productIndex + reviewIndex) % 3);
+      const user = activeUsers[(productIndex + reviewIndex) % activeUsers.length];
+      const createdAt = daysAgo(90 - productIndex * 2 - reviewIndex, 10 + (reviewIndex % 6));
+
+      return {
+        product: product._id,
+        user: user._id,
+        rating,
+        title: reviewTitles[(productIndex + reviewIndex) % reviewTitles.length],
+        text:
+          `${product.name.en} received a seeded review from ${user.name}. ` +
+          `This helps test storefront review lists, rating stats, and admin moderation on realistic data.`,
+        isApproved: true,
+        createdAt,
+        updatedAt: new Date(createdAt.getTime() + 2 * 60 * 60 * 1000),
+      };
+    });
+  });
 
   await Review.insertMany(docs);
 
@@ -902,6 +1278,7 @@ async function seedMessages(users, admin) {
     "Please advise on delivery time for Lviv.",
     "Can I reserve the bed before payment?",
     "I need dimensions for the armchair model.",
+    "Can you send me a photo of the wood finish?",
   ];
 
   const replies = [
@@ -910,13 +1287,14 @@ async function seedMessages(users, admin) {
     "Delivery to Lviv usually takes two to three business days.",
     "Reservation is possible after a short confirmation call.",
     "I have sent the dimensions and stock note in the chat thread.",
+    "I have attached additional finish references and stock notes.",
   ];
 
   const docs = users
     .filter((user) => user.status === "active")
     .flatMap((user, index) => {
       const userId = String(user._id);
-      const baseDate = daysAgo(5 - index, 10 + index);
+      const baseDate = daysAgo(Math.max(1, 12 - index), 10 + (index % 6));
 
       return [
         {
@@ -955,6 +1333,18 @@ async function seedMessages(users, admin) {
           createdAt: new Date(baseDate.getTime() + 50 * 60 * 1000),
           updatedAt: new Date(baseDate.getTime() + 50 * 60 * 1000),
         },
+        {
+          sender: adminId,
+          receiver: userId,
+          text: `We marked your request and can offer pickup or courier for order slot ${index + 1}.`,
+          isGuest: false,
+          guestName: "",
+          isRead: index % 3 !== 0,
+          source: "human",
+          meta: { seedTag: SEED_TAG },
+          createdAt: new Date(baseDate.getTime() + 80 * 60 * 1000),
+          updatedAt: new Date(baseDate.getTime() + 80 * 60 * 1000),
+        },
       ];
     });
 
@@ -987,6 +1377,7 @@ async function main() {
     seedProducts(),
     seedUsers(passwordHash),
   ]);
+  await syncDemoTranslations();
 
   await seedInventory(products, locations, admin);
   await seedLikes(users, products);
