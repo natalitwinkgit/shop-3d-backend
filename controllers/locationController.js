@@ -3,6 +3,11 @@ import Location from "../models/Location.js";
 const LOCATION_TYPES = new Set(["shop", "showroom", "office", "warehouse"]);
 
 const pickStr = (value) => String(value || "").trim();
+const toKey = (value) =>
+  pickStr(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
 
 const toBool = (value) => String(value) === "true" || String(value) === "1" || value === true;
 
@@ -25,7 +30,12 @@ const normalizeLocationPayload = (body = {}, { partial = false } = {}) => {
   }
 
   if ("city" in body || !partial) payload.city = pickStr(body.city);
+  if ("city" in body || "cityKey" in body || !partial) {
+    payload.cityKey = toKey(body.cityKey || body.city);
+  }
+  if ("name" in body || !partial) payload.name = pickStr(body.name);
   if ("nameKey" in body || !partial) payload.nameKey = pickStr(body.nameKey);
+  if ("address" in body || !partial) payload.address = pickStr(body.address);
   if ("addressKey" in body || !partial) payload.addressKey = pickStr(body.addressKey);
   if ("phone" in body) payload.phone = pickStr(body.phone);
   if ("isActive" in body) payload.isActive = toBool(body.isActive);
@@ -52,10 +62,14 @@ const normalizeLocationPayload = (body = {}, { partial = false } = {}) => {
 };
 
 const formatLocation = (doc) => ({
+  _id: String(doc._id),
   id: String(doc._id),
   type: doc.type || "",
   city: doc.city || "",
+  cityKey: doc.cityKey || toKey(doc.city),
+  name: doc.name || doc.nameKey || "",
   nameKey: doc.nameKey || "",
+  address: doc.address || doc.addressKey || "",
   addressKey: doc.addressKey || "",
   coordinates: {
     lat: Number(doc.coordinates?.lat || 0),

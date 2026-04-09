@@ -3,7 +3,10 @@ import mongoose from "mongoose";
 const locationSchema = new mongoose.Schema({
   type: { type: String, enum: ['shop', 'showroom', 'office', 'warehouse'], required: true },
   city: { type: String, required: true }, // Технічна назва (напр. "Kyiv")
+  cityKey: { type: String, default: "" },
+  name: { type: String, default: "" },
   nameKey: { type: String, required: true },
+  address: { type: String, default: "" },
   addressKey: { type: String, required: true },
   coordinates: {
     lat: { type: Number, required: true },
