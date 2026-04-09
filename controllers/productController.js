@@ -3,6 +3,12 @@ import Product from "../models/Product.js";
 import Inventory from "../models/Inventory.js";
 import path from "path";
 import fs from "fs";
+import {
+  expandRoomQueryKeys,
+  normalizeMaterialKeys,
+  normalizeProductCatalogPayload,
+  normalizeRoomKeys,
+} from "../services/catalogNormalizationService.js";
 
 /* =========================
     FS helpers
@@ -47,6 +53,16 @@ const parseCsv = (v) => {
   return items.length ? items : null;
 };
 
+const mergeCsvInputs = (...values) =>
+  Array.from(
+    new Set(
+      values
+        .flatMap((value) => parseCsv(value) || [])
+        .map((item) => String(item).trim())
+        .filter(Boolean)
+    )
+  );
+
 const addRange = (obj, field, minV, maxV) => {
   const min = toNumberOrNull(minV);
   const max = toNumberOrNull(maxV);
@@ -71,25 +87,123 @@ const cleanUniq = (arr) =>
     )
   ).sort();
 
+const normalizeFacetValues = (values, normalizer) =>
+  Array.from(
+    new Set(
+      (values || [])
+        .flat()
+        .map((value) => normalizer(value))
+        .filter(Boolean)
+    )
+  ).sort();
+
+const buildMaterialFilter = (values) => {
+  const materialKeys = normalizeMaterialKeys(values);
+  if (!materialKeys.length) return null;
+
+  return {
+    $or: [
+      { "specifications.materialKey": { $in: materialKeys } },
+      { "specifications.materialKeys": { $in: materialKeys } },
+      { "specifications.materials.key": { $in: materialKeys } },
+      { "specifications.materials": { $in: materialKeys } },
+    ],
+  };
+};
+
+const buildProductCollectionFilter = (req) => {
+  const clauses = [];
+
+  const category = getQueryParam(req, "category");
+  const subCategory = getQueryParam(req, "subCategory");
+  const typeKey = getQueryParam(req, "typeKey");
+
+  const colorKeys = parseCsv(getQueryParam(req, "colorKeys"));
+  const styleKeys = parseCsv(getQueryParam(req, "styleKeys"));
+  const roomKeys = mergeCsvInputs(getQueryParam(req, "roomKeys"));
+  const collectionKeys = parseCsv(getQueryParam(req, "collectionKeys"));
+
+  const materialKeys = mergeCsvInputs(
+    getQueryParam(req, "materialKeys"),
+    getQueryParam(req, "materialKey")
+  );
+  const manufacturerKeys = mergeCsvInputs(
+    getQueryParam(req, "manufacturerKeys"),
+    getQueryParam(req, "manufacturerKey")
+  );
+
+  const priceMin = getQueryParam(req, "priceMin");
+  const priceMax = getQueryParam(req, "priceMax");
+  const hasModel = getQueryParam(req, "hasModel");
+  const hasDiscount = getQueryParam(req, "hasDiscount");
+  const q = getQueryParam(req, "q");
+
+  if (!isEmpty(category)) clauses.push({ category: String(category).trim() });
+  if (!isEmpty(subCategory) && subCategory !== "all") {
+    clauses.push({ subCategory: String(subCategory).trim() });
+  }
+  if (!isEmpty(typeKey)) clauses.push({ typeKey: String(typeKey).trim() });
+
+  if (colorKeys?.length) clauses.push({ colorKeys: { $in: colorKeys } });
+  if (styleKeys?.length) clauses.push({ styleKeys: { $in: styleKeys } });
+  if (collectionKeys?.length) clauses.push({ collectionKeys: { $in: collectionKeys } });
+  if (roomKeys?.length) clauses.push({ roomKeys: { $in: expandRoomQueryKeys(roomKeys) } });
+
+  const materialFilter = buildMaterialFilter(materialKeys);
+  if (materialFilter) clauses.push(materialFilter);
+  if (manufacturerKeys?.length) {
+    clauses.push({ "specifications.manufacturerKey": { $in: manufacturerKeys } });
+  }
+
+  const rangeFilter = {};
+  addRange(rangeFilter, "price", priceMin, priceMax);
+  if (Object.keys(rangeFilter).length) clauses.push(rangeFilter);
+
+  if (truthy(hasDiscount)) clauses.push({ discount: { $gt: 0 } });
+  if (truthy(hasModel)) clauses.push({ modelUrl: { $exists: true, $ne: "" } });
+
+  if (!isEmpty(q)) {
+    const rx = new RegExp(escapeRegExp(q), "i");
+    clauses.push({
+      $or: [
+        { "name.ua": rx },
+        { "name.en": rx },
+        { "description.ua": rx },
+        { "description.en": rx },
+        { sku: rx },
+        { slug: rx },
+      ],
+    });
+  }
+
+  if (!clauses.length) return {};
+  if (clauses.length === 1) return clauses[0];
+  return { $and: clauses };
+};
+
 /* =======================
     ✅ GET /api/products/facets
 ======================= */
 export const getProductFacets = async (req, res) => {
   try {
-    const category = String(req.query.category || "").trim();
-    const subCategory = String(req.query.subCategory || "").trim();
+    const match = buildProductCollectionFilter(req);
 
-    const match = {};
-    if (category) match.category = category;
-    if (subCategory && subCategory !== "all") match.subCategory = subCategory;
-
-    const [colorKeys, styleKeys, roomKeys, collectionKeys, materialKeys, manufacturerKeys] =
+    const [
+      colorKeys,
+      styleKeys,
+      roomKeys,
+      collectionKeys,
+      materialKeySingles,
+      materialKeyLists,
+      manufacturerKeys,
+    ] =
       await Promise.all([
         Product.distinct("colorKeys", match),
         Product.distinct("styleKeys", match),
         Product.distinct("roomKeys", match),
         Product.distinct("collectionKeys", match),
         Product.distinct("specifications.materialKey", match),
+        Product.distinct("specifications.materialKeys", match),
         Product.distinct("specifications.manufacturerKey", match),
       ]);
 
@@ -97,9 +211,12 @@ export const getProductFacets = async (req, res) => {
     res.json({
       colorKeys: cleanUniq(colorKeys),
       styleKeys: cleanUniq(styleKeys),
-      roomKeys: cleanUniq(roomKeys),
+      roomKeys: normalizeFacetValues(roomKeys, (value) => normalizeRoomKeys([value])[0]),
       collectionKeys: cleanUniq(collectionKeys),
-      materialKeys: cleanUniq(materialKeys),
+      materialKeys: normalizeFacetValues(
+        [...(materialKeySingles || []), ...(materialKeyLists || [])],
+        (value) => normalizeMaterialKeys([value])[0]
+      ),
       manufacturerKeys: cleanUniq(manufacturerKeys),
     });
   } catch (e) {
@@ -117,61 +234,9 @@ export const getProductFacets = async (req, res) => {
 ======================= */
 export const getProducts = async (req, res) => {
   try {
-    const category = getQueryParam(req, "category");
-    const subCategory = getQueryParam(req, "subCategory");
-    const typeKey = getQueryParam(req, "typeKey");
-
-    const materialKey = getQueryParam(req, "materialKey");
-    const manufacturerKey = getQueryParam(req, "manufacturerKey");
-
-    const priceMin = getQueryParam(req, "priceMin");
-    const priceMax = getQueryParam(req, "priceMax");
-
-    const hasModel = getQueryParam(req, "hasModel");
-    const hasDiscount = getQueryParam(req, "hasDiscount");
     const hasStock = getQueryParam(req, "hasStock"); // ✅ inventory-first filter
-
-    const colorKeys = getQueryParam(req, "colorKeys");
-    const styleKeys = getQueryParam(req, "styleKeys");
-    const roomKeys = getQueryParam(req, "roomKeys");
-    const collectionKeys = getQueryParam(req, "collectionKeys");
-
-    const q = getQueryParam(req, "q");
     const sort = getQueryParam(req, "sort");
-
-    const filter = {};
-    if (!isEmpty(category)) filter.category = String(category);
-    if (!isEmpty(subCategory) && subCategory !== "all") filter.subCategory = String(subCategory);
-    if (!isEmpty(typeKey)) filter.typeKey = String(typeKey);
-
-    const arrayFields = { colorKeys, styleKeys, roomKeys, collectionKeys };
-    Object.entries(arrayFields).forEach(([key, val]) => {
-      const parsed = parseCsv(val);
-      if (parsed) filter[key] = { $in: parsed };
-    });
-
-    const materialList = parseCsv(materialKey);
-    if (materialList) filter["specifications.materialKey"] = { $in: materialList };
-
-    const manufacturerList = parseCsv(manufacturerKey);
-    if (manufacturerList) filter["specifications.manufacturerKey"] = { $in: manufacturerList };
-
-    addRange(filter, "price", priceMin, priceMax);
-
-    if (truthy(hasDiscount)) filter.discount = { $gt: 0 };
-    if (truthy(hasModel)) filter.modelUrl = { $exists: true, $ne: "" };
-
-    if (!isEmpty(q)) {
-      const rx = new RegExp(escapeRegExp(q), "i");
-      filter.$or = [
-        { "name.ua": rx },
-        { "name.en": rx },
-        { "description.ua": rx },
-        { "description.en": rx },
-        { sku: rx },
-        { slug: rx },
-      ];
-    }
+    const filter = buildProductCollectionFilter(req);
 
     let sortObj = { createdAt: -1 };
     switch (String(sort || "").toLowerCase()) {
@@ -230,9 +295,53 @@ export const getProducts = async (req, res) => {
     const list = await Product.aggregate(pipeline);
 
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");
-    res.json(list);
+    res.json(list.map((item) => normalizeProductCatalogPayload(item)));
   } catch (err) {
     console.error("Products load error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+export const getProductRooms = async (_req, res) => {
+  try {
+    const items = await Product.aggregate([
+      { $match: { status: { $ne: "archived" } } },
+      { $unwind: "$roomKeys" },
+      {
+        $group: {
+          _id: "$roomKeys",
+          count: { $sum: 1 },
+          coverImage: { $first: { $arrayElemAt: ["$images", 0] } },
+        },
+      },
+      { $sort: { count: -1, _id: 1 } },
+    ]);
+
+    const roomMap = new Map();
+    for (const item of items) {
+      const key = normalizeRoomKeys([item._id])[0];
+      if (!key) continue;
+
+      const existing = roomMap.get(key);
+      if (!existing) {
+        roomMap.set(key, {
+          key,
+          count: Number(item.count || 0),
+          coverImage: item.coverImage || "",
+        });
+        continue;
+      }
+
+      existing.count += Number(item.count || 0);
+      if (!existing.coverImage && item.coverImage) {
+        existing.coverImage = item.coverImage;
+      }
+    }
+
+    res.set("Cache-Control", "no-store");
+    res.json(Array.from(roomMap.values()).sort((left, right) => right.count - left.count));
+  } catch (error) {
+    console.error("[getProductRooms] error:", error);
     res.status(500).json({ message: "Internal server error" });
   }
 };
@@ -281,7 +390,7 @@ export const getProductBySlug = async (req, res) => {
   try {
     const product = await Product.findOne({ slug: req.params.slug });
     if (!product) return res.status(404).json({ message: "Товар не знайдено" });
-    res.json(product);
+    res.json(normalizeProductCatalogPayload(product.toObject()));
   } catch (err) {
     res.status(500).json({ message: "Помилка сервера" });
   }
@@ -291,7 +400,7 @@ export const getProductById = async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: "Товар не знайдено" });
-    res.json(product);
+    res.json(normalizeProductCatalogPayload(product.toObject()));
   } catch (err) {
     res.status(500).json({ message: "Помилка сервера" });
   }
@@ -317,12 +426,12 @@ export const createProduct = async (req, res) => {
       modelUrl,
       styleKeys: parseCsv(req.body.styleKeys) || [],
       colorKeys: parseCsv(req.body.colorKeys) || [],
-      roomKeys: parseCsv(req.body.roomKeys) || [],
+      roomKeys: normalizeRoomKeys(parseCsv(req.body.roomKeys) || []),
       collectionKeys: parseCsv(req.body.collectionKeys) || [],
     });
 
     await product.save();
-    res.status(201).json(product);
+    res.status(201).json(normalizeProductCatalogPayload(product.toObject()));
   } catch (err) {
     console.error("[createProduct] error:", err);
     res.status(500).json({ message: "Помилка при створенні" });
@@ -341,7 +450,10 @@ export const updateProduct = async (req, res) => {
     delete updateData.stockQty;
 
     ["styleKeys", "colorKeys", "roomKeys", "collectionKeys"].forEach((key) => {
-      if (req.body[key] !== undefined) updateData[key] = parseCsv(req.body[key]) || [];
+      if (req.body[key] !== undefined) {
+        const parsed = parseCsv(req.body[key]) || [];
+        updateData[key] = key === "roomKeys" ? normalizeRoomKeys(parsed) : parsed;
+      }
     });
 
     const category = String(req.body.category || product.category || "uncategorized");
@@ -362,7 +474,7 @@ export const updateProduct = async (req, res) => {
       { new: true }
     );
 
-    res.json(updated);
+    res.json(normalizeProductCatalogPayload(updated.toObject()));
   } catch (err) {
     console.error("[updateProduct] error:", err);
     res.status(500).json({ message: "Помилка оновлення" });

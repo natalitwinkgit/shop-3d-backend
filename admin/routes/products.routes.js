@@ -3,6 +3,7 @@ import { Router } from "express";
 import { getProductsStats } from "../../controllers/productController.js";
 import Product from "../../models/Product.js";
 import { adminUpload, toBool } from "../lib/adminShared.js";
+import { normalizeRoomKeys } from "../../services/catalogNormalizationService.js";
 
 const router = Router();
 
@@ -40,7 +41,7 @@ router.post(
       const description = JSON.parse(body.description || "{}");
       const styleKeys = JSON.parse(body.styleKeys || "[]");
       const colorKeys = JSON.parse(body.colorKeys || "[]");
-      const roomKeys = JSON.parse(body.roomKeys || "[]");
+      const roomKeys = normalizeRoomKeys(JSON.parse(body.roomKeys || "[]"));
       const collectionKeys = JSON.parse(body.collectionKeys || "[]");
       const featureKeys = JSON.parse(body.featureKeys || "[]");
       const specifications = JSON.parse(body.specifications || "{}");
@@ -96,7 +97,7 @@ router.put(
       const description = JSON.parse(body.description || "{}");
       const styleKeys = JSON.parse(body.styleKeys || "[]");
       const colorKeys = JSON.parse(body.colorKeys || "[]");
-      const roomKeys = JSON.parse(body.roomKeys || "[]");
+      const roomKeys = normalizeRoomKeys(JSON.parse(body.roomKeys || "[]"));
       const collectionKeys = JSON.parse(body.collectionKeys || "[]");
       const featureKeys = JSON.parse(body.featureKeys || "[]");
       const specifications = JSON.parse(body.specifications || "{}");

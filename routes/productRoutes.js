@@ -11,9 +11,11 @@ import {
   updateProduct,
   deleteProduct,
   getProductFacets,
+  getProductRooms,
   getProductBySlug,    // ✅ НОВЕ: з контролера
   getProductsStats     // ✅ НОВЕ: з контролера
 } from "../controllers/productController.js";
+import { normalizeProductCatalogPayload } from "../services/catalogNormalizationService.js";
 
 import { protect, admin } from "../middleware/authMiddleware.js";
 
@@ -74,6 +76,7 @@ router.get("/filter", getProducts);
 
 // 3) GET /api/products/facets — ключі фільтрів
 router.get("/facets", getProductFacets);
+router.get("/rooms", getProductRooms);
 
 /**
  * 4) SEO URL: /api/products/by-slug/...
@@ -88,7 +91,7 @@ router.get("/by-slug/:category/:subCategory/:slug", async (req, res) => {
       subCategory: String(subCategory || "").trim(),
     });
     if (!product) return res.status(404).json({ message: "Product not found" });
-    res.json(product);
+    res.json(normalizeProductCatalogPayload(product.toObject()));
   } catch (e) {
     res.status(500).json({ message: "Server error" });
   }
