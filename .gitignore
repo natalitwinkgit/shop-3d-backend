@@ -21,3 +21,6 @@ build/
 
 # Railway (якщо не хочеш)
 # .railway/
+
+# runtime uploads
+uploads/avatars/
