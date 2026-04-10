@@ -48,6 +48,9 @@ const daysAhead = (days, hour = 14) => {
 const placeholderImage = (label) =>
   `https://placehold.co/1200x900/f1d8bf/4b2e1f?text=${encodeURIComponent(label)}`;
 
+const buildCloudinaryModelUrl = (slug) =>
+  `https://res.cloudinary.com/demo-furniture-catalog/raw/upload/v1/products/models/${encodeURIComponent(slug)}.glb`;
+
 const computeDiscountedPrice = (product) => {
   const price = Number(product?.price || 0);
   const discount = Math.max(0, Math.min(100, Number(product?.discount || 0)));
@@ -767,7 +770,8 @@ async function seedProducts() {
     subCategory: product.subCategory,
     typeKey: `${product.category}:${product.subCategory}`,
     images: product.images,
-    modelUrl: "",
+    previewImage: product.images?.[0] || "",
+    modelUrl: buildCloudinaryModelUrl(product.slug),
     styleKeys: product.styleKeys,
     colorKeys: product.colorKeys,
     roomKeys: product.roomKeys,

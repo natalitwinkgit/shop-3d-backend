@@ -1,7 +1,5 @@
 import express from "express";
 import multer from "multer";
-import path from "path";
-import fs from "fs";
 
 import Product from "../models/Product.js";
 import {
@@ -20,47 +18,7 @@ import { normalizeProductCatalogPayload } from "../services/catalogNormalization
 import { protect, admin } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
-
-/* =========================
-   MULTER STORAGE (ЗБЕРЕЖЕНО)
-========================= */
-const baseUploadPath = path.join(process.cwd(), "public/uploads/products");
-
-const ensureCategoryFolder = (categoryKey) => {
-  const safeKey = String(categoryKey || "uncategorized").trim() || "uncategorized";
-  const folderPath = path.join(baseUploadPath, safeKey);
-  if (!fs.existsSync(folderPath)) {
-    fs.mkdirSync(folderPath, { recursive: true });
-  }
-  return folderPath;
-};
-
-const attachCategoryFromProduct = async (req, res, next) => {
-  try {
-    if (req.body?.category) return next();
-    if (!req.params?.id) return next();
-    const product = await Product.findById(req.params.id).select("category");
-    if (product?.category) req.body.category = String(product.category);
-    return next();
-  } catch (err) {
-    return next();
-  }
-};
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const category = req.body.category || "uncategorized";
-    const folderPath = ensureCategoryFolder(category);
-    cb(null, folderPath);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    const ext = path.extname(file.originalname);
-    cb(null, `${file.fieldname}-${uniqueSuffix}${ext}`);
-  },
-});
-
-const upload = multer({ storage });
+const textOnlyMultipart = multer().none();
 
 /* =========================
    ROUTES
@@ -108,10 +66,7 @@ router.post(
   "/",
   protect,
   admin,
-  upload.fields([
-    { name: "images", maxCount: 5 },
-    { name: "modelFile", maxCount: 1 },
-  ]),
+  textOnlyMultipart,
   createProduct
 );
 
@@ -120,11 +75,15 @@ router.put(
   "/:id",
   protect,
   admin,
-  attachCategoryFromProduct,
-  upload.fields([
-    { name: "images", maxCount: 5 },
-    { name: "modelFile", maxCount: 1 },
-  ]),
+  textOnlyMultipart,
+  updateProduct
+);
+
+router.patch(
+  "/:id",
+  protect,
+  admin,
+  textOnlyMultipart,
   updateProduct
 );
 

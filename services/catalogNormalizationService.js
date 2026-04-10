@@ -80,6 +80,10 @@ export const extractProductMaterialKeys = (productDoc = {}) => {
 
 export const normalizeProductCatalogPayload = (productDoc = {}) => ({
   ...productDoc,
+  previewImage:
+    (typeof productDoc?.previewImage === "string" && productDoc.previewImage.trim()) ||
+    (Array.isArray(productDoc?.images) ? productDoc.images.find((item) => String(item || "").trim()) || "" : ""),
+  modelUrl: typeof productDoc?.modelUrl === "string" ? productDoc.modelUrl : "",
   roomKeys: normalizeRoomKeys(productDoc?.roomKeys || []),
   materialKeys: extractProductMaterialKeys(productDoc),
 });

@@ -1,32 +1,28 @@
 // controllers/productController.js
+import mongoose from "mongoose";
 import Product from "../models/Product.js";
 import Inventory from "../models/Inventory.js";
-import path from "path";
-import fs from "fs";
 import {
   expandRoomQueryKeys,
   normalizeMaterialKeys,
   normalizeProductCatalogPayload,
   normalizeRoomKeys,
 } from "../services/catalogNormalizationService.js";
+import {
+  buildProductMutationPayload,
+  createHttpError,
+} from "../services/productPayloadService.js";
 
-/* =========================
-    FS helpers
-========================= */
-const normalizePublicPath = (p) => String(p || "").replace(/^\/+/, "");
-const isHttp = (p) => /^https?:\/\//i.test(String(p || ""));
-
-const deleteFile = (filePath) => {
-  try {
-    if (!filePath || isHttp(filePath)) return;
-    const rel = normalizePublicPath(filePath);
-    if (!rel) return;
-
-    const absolutePath = path.join(process.cwd(), "public", rel);
-    if (fs.existsSync(absolutePath)) fs.unlinkSync(absolutePath);
-  } catch (err) {
-    console.error("Failed to delete file:", filePath, err);
+const ensureObjectId = (value, fieldName = "Product id") => {
+  if (!mongoose.Types.ObjectId.isValid(String(value || ""))) {
+    throw createHttpError(400, `${fieldName} is invalid`);
   }
+};
+
+const forwardControllerError = (error, next, scope, fallbackMessage) => {
+  if (error?.statusCode || error?.status) return next(error);
+  console.error(`[${scope}] error:`, error);
+  return next(createHttpError(500, fallbackMessage));
 };
 
 /* =========================
@@ -184,7 +180,7 @@ const buildProductCollectionFilter = (req) => {
 /* =======================
     ✅ GET /api/products/facets
 ======================= */
-export const getProductFacets = async (req, res) => {
+export const getProductFacets = async (req, res, next) => {
   try {
     const match = buildProductCollectionFilter(req);
 
@@ -220,8 +216,7 @@ export const getProductFacets = async (req, res) => {
       manufacturerKeys: cleanUniq(manufacturerKeys),
     });
   } catch (e) {
-    console.error("[getProductFacets] error:", e);
-    res.status(500).json({ message: "Internal server error" });
+    forwardControllerError(e, next, "getProductFacets", "Internal server error");
   }
 };
 
@@ -232,7 +227,7 @@ export const getProductFacets = async (req, res) => {
       - supports query hasStock=1/0
       - reads inventories.product (NOT productId)
 ======================= */
-export const getProducts = async (req, res) => {
+export const getProducts = async (req, res, next) => {
   try {
     const hasStock = getQueryParam(req, "hasStock"); // ✅ inventory-first filter
     const sort = getQueryParam(req, "sort");
@@ -297,12 +292,11 @@ export const getProducts = async (req, res) => {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");
     res.json(list.map((item) => normalizeProductCatalogPayload(item)));
   } catch (err) {
-    console.error("Products load error:", err);
-    res.status(500).json({ message: "Internal server error" });
+    forwardControllerError(err, next, "getProducts", "Internal server error");
   }
 };
 
-export const getProductRooms = async (_req, res) => {
+export const getProductRooms = async (_req, res, next) => {
   try {
     const items = await Product.aggregate([
       { $match: { status: { $ne: "archived" } } },
@@ -311,7 +305,15 @@ export const getProductRooms = async (_req, res) => {
         $group: {
           _id: "$roomKeys",
           count: { $sum: 1 },
-          coverImage: { $first: { $arrayElemAt: ["$images", 0] } },
+          coverImage: {
+            $first: {
+              $cond: [
+                { $gt: [{ $strLenCP: { $ifNull: ["$previewImage", ""] } }, 0] },
+                "$previewImage",
+                { $arrayElemAt: ["$images", 0] },
+              ],
+            },
+          },
         },
       },
       { $sort: { count: -1, _id: 1 } },
@@ -341,8 +343,7 @@ export const getProductRooms = async (_req, res) => {
     res.set("Cache-Control", "no-store");
     res.json(Array.from(roomMap.values()).sort((left, right) => right.count - left.count));
   } catch (error) {
-    console.error("[getProductRooms] error:", error);
-    res.status(500).json({ message: "Internal server error" });
+    forwardControllerError(error, next, "getProductRooms", "Internal server error");
   }
 };
 
@@ -351,7 +352,7 @@ export const getProductRooms = async (_req, res) => {
     inventory-first stats:
       - group by inventories.product (NOT productId)
 ======================= */
-export const getProductsStats = async (req, res) => {
+export const getProductsStats = async (_req, res, next) => {
   try {
     const total = await Product.countDocuments();
     const hasDiscount = await Product.countDocuments({ discount: { $gt: 0 } });
@@ -379,117 +380,100 @@ export const getProductsStats = async (req, res) => {
       hasDiscount,
     });
   } catch (err) {
-    res.status(500).json({ message: "Статистика недоступна" });
+    forwardControllerError(err, next, "getProductsStats", "Статистика недоступна");
   }
 };
 
 /* =======================
     CRUD (як було)
 ======================= */
-export const getProductBySlug = async (req, res) => {
+export const getProductBySlug = async (req, res, next) => {
   try {
-    const product = await Product.findOne({ slug: req.params.slug });
-    if (!product) return res.status(404).json({ message: "Товар не знайдено" });
-    res.json(normalizeProductCatalogPayload(product.toObject()));
-  } catch (err) {
-    res.status(500).json({ message: "Помилка сервера" });
-  }
-};
-
-export const getProductById = async (req, res) => {
-  try {
-    const product = await Product.findById(req.params.id);
-    if (!product) return res.status(404).json({ message: "Товар не знайдено" });
-    res.json(normalizeProductCatalogPayload(product.toObject()));
-  } catch (err) {
-    res.status(500).json({ message: "Помилка сервера" });
-  }
-};
-
-export const createProduct = async (req, res) => {
-  try {
-    const { name_ua, name_en, category, price } = req.body;
-    if (!name_ua || !name_en || !category || isEmpty(price)) {
-      return res.status(400).json({ message: "Заповніть обов'язкові поля" });
+    const slug = String(req.params.slug || "").trim();
+    if (!slug) {
+      throw createHttpError(400, "Slug is required");
     }
 
-    const images = req.files?.images?.map((f) => `/uploads/products/${category}/${f.filename}`) || [];
-    const modelUrl = req.files?.modelFile?.[0]
-      ? `/uploads/products/${category}/${req.files.modelFile[0].filename}`
-      : req.body.modelUrl || "";
+    const product = await Product.findOne({ slug });
+    if (!product) throw createHttpError(404, "Товар не знайдено");
 
-    const product = new Product({
-      ...req.body,
-      name: { ua: name_ua, en: name_en },
-      price: Number(price),
-      images,
-      modelUrl,
-      styleKeys: parseCsv(req.body.styleKeys) || [],
-      colorKeys: parseCsv(req.body.colorKeys) || [],
-      roomKeys: normalizeRoomKeys(parseCsv(req.body.roomKeys) || []),
-      collectionKeys: parseCsv(req.body.collectionKeys) || [],
+    res.json(normalizeProductCatalogPayload(product.toObject()));
+  } catch (err) {
+    forwardControllerError(err, next, "getProductBySlug", "Помилка сервера");
+  }
+};
+
+export const getProductById = async (req, res, next) => {
+  try {
+    ensureObjectId(req.params.id);
+
+    const product = await Product.findById(req.params.id);
+    if (!product) throw createHttpError(404, "Товар не знайдено");
+
+    res.json(normalizeProductCatalogPayload(product.toObject()));
+  } catch (err) {
+    forwardControllerError(err, next, "getProductById", "Помилка сервера");
+  }
+};
+
+export const createProduct = async (req, res, next) => {
+  try {
+    const payload = buildProductMutationPayload({
+      body: req.body,
+      partial: false,
+      allowInventoryFields: false,
     });
 
-    await product.save();
+    const product = await Product.create(payload);
     res.status(201).json(normalizeProductCatalogPayload(product.toObject()));
   } catch (err) {
-    console.error("[createProduct] error:", err);
-    res.status(500).json({ message: "Помилка при створенні" });
+    if (err?.code === 11000) {
+      return next(createHttpError(409, "Product slug must be unique"));
+    }
+
+    return forwardControllerError(err, next, "createProduct", "Помилка при створенні");
   }
 };
 
-export const updateProduct = async (req, res) => {
+export const updateProduct = async (req, res, next) => {
   try {
+    ensureObjectId(req.params.id);
+
     const product = await Product.findById(req.params.id);
-    if (!product) return res.status(404).json({ message: "Не знайдено" });
+    if (!product) throw createHttpError(404, "Не знайдено");
 
-    const updateData = { ...req.body };
-
-    // ❌ не зберігаємо
-    delete updateData.inStock;
-    delete updateData.stockQty;
-
-    ["styleKeys", "colorKeys", "roomKeys", "collectionKeys"].forEach((key) => {
-      if (req.body[key] !== undefined) {
-        const parsed = parseCsv(req.body[key]) || [];
-        updateData[key] = key === "roomKeys" ? normalizeRoomKeys(parsed) : parsed;
-      }
+    const updateData = buildProductMutationPayload({
+      body: req.body,
+      existingProduct: product.toObject(),
+      partial: true,
+      allowInventoryFields: false,
     });
-
-    const category = String(req.body.category || product.category || "uncategorized");
-
-    if (req.files?.images?.length) {
-      (product.images || []).forEach(deleteFile);
-      updateData.images = req.files.images.map((f) => `/uploads/products/${category}/${f.filename}`);
-    }
-
-    if (req.files?.modelFile?.[0]) {
-      if (product.modelUrl) deleteFile(product.modelUrl);
-      updateData.modelUrl = `/uploads/products/${category}/${req.files.modelFile[0].filename}`;
-    }
 
     const updated = await Product.findByIdAndUpdate(
       req.params.id,
       { $set: updateData },
-      { new: true }
+      { new: true, runValidators: true }
     );
 
     res.json(normalizeProductCatalogPayload(updated.toObject()));
   } catch (err) {
-    console.error("[updateProduct] error:", err);
-    res.status(500).json({ message: "Помилка оновлення" });
+    if (err?.code === 11000) {
+      return next(createHttpError(409, "Product slug must be unique"));
+    }
+
+    return forwardControllerError(err, next, "updateProduct", "Помилка оновлення");
   }
 };
 
-export const deleteProduct = async (req, res) => {
+export const deleteProduct = async (req, res, next) => {
   try {
+    ensureObjectId(req.params.id);
+
     const deleted = await Product.findByIdAndDelete(req.params.id);
-    if (!deleted) return res.status(404).json({ message: "Не знайдено" });
-    (deleted.images || []).forEach(deleteFile);
-    if (deleted.modelUrl) deleteFile(deleted.modelUrl);
+    if (!deleted) throw createHttpError(404, "Не знайдено");
+
     res.json({ message: "Видалено" });
   } catch (err) {
-    console.error("[deleteProduct] error:", err);
-    res.status(500).json({ message: "Помилка видалення" });
+    forwardControllerError(err, next, "deleteProduct", "Помилка видалення");
   }
 };

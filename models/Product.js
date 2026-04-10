@@ -12,6 +12,7 @@ const productSchema = new mongoose.Schema(
     typeKey: { type: String, index: true },
 
     images: { type: [String], default: [] },
+    previewImage: { type: String, default: "" },
     modelUrl: { type: String, default: "" },
 
     styleKeys: { type: [String], default: [], index: true },
