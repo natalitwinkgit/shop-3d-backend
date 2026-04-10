@@ -1,16 +1,20 @@
-import express from 'express';
+import express from "express";
+
+import {
+  createMissingTranslation,
+  getI18nMissingStatus,
+} from "../controllers/i18nMissingController.js";
+import { createRateLimit } from "../middleware/rateLimitMiddleware.js";
 
 const router = express.Router();
 
-// ✅ Заглушка/мінімальний роут
-// Можеш потім підключити контролер, який зберігає "missing translation keys" у MongoDB
-router.get('/', (_req, res) => {
-  res.json({ ok: true, message: 'i18nMissingRoutes is active' });
+const i18nMissingRateLimit = createRateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  message: "Too many AI translation requests",
 });
 
-router.post('/', (req, res) => {
-  // очікуємо { key, lang, page, meta }
-  res.status(201).json({ ok: true, received: req.body || {} });
-});
+router.get("/", getI18nMissingStatus);
+router.post("/", i18nMissingRateLimit, createMissingTranslation);
 
 export default router;
