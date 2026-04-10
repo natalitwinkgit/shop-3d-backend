@@ -1,13 +1,13 @@
 # Frontend API Reference
 
-Updated: 2026-04-07
+Updated: 2026-04-10
 Source of truth: current mounted routes in `index.js` and route definitions in `routes/`.
 
 ## Base
 
 - Local base URL: `http://localhost:5000`
 - API prefix: `/api`
-- Static files: `/uploads/...`
+- Static files: `/uploads/...` remain for legacy/category assets, but product `previewImage` and `modelUrl` should use direct remote URLs (for example Cloudinary)
 - Default auth header: `Authorization: Bearer <token>`
 - Default content type for JSON routes: `Content-Type: application/json`
 - Admin frontend should use the normalized admin namespace: `/api/admin/*`
@@ -76,6 +76,27 @@ Source of truth: current mounted routes in `index.js` and route definitions in `
 - `GET /api/products/by-slug/:category/:subCategory/:slug`
 - `GET /api/products/by-slug/:slug`
 - `GET /api/products/:id`
+- `POST /api/products`
+- `PUT /api/products/:id`
+- `PATCH /api/products/:id`
+- `DELETE /api/products/:id`
+  - `POST/PUT/PATCH/DELETE` require admin auth
+  - `POST/PUT/PATCH` accept `application/json` or text-only `multipart/form-data`
+  - backend expects ready-to-use URL strings for `previewImage` and `modelUrl`; product media files are not uploaded through backend anymore
+  - request body supports either localized objects or simple strings for `name` / `description`
+  - minimal body example:
+  ```json
+  {
+    "name": "Nordic Lounge Chair",
+    "description": "Soft armchair with 3D model",
+    "category": "chairs",
+    "price": 12999,
+    "previewImage": "https://res.cloudinary.com/your-cloud/image/upload/v1/products/chair-preview.jpg",
+    "modelUrl": "https://res.cloudinary.com/your-cloud/raw/upload/v1/products/chair.glb"
+  }
+  ```
+  - product responses include `_id`, `name`, `description`, `price`, `previewImage`, `modelUrl`
+  - current backend keeps the existing localized shape for `name` / `description` in responses: `{ ua, en }`
 
 ### Categories / Subcategories
 
@@ -119,9 +140,17 @@ Source of truth: current mounted routes in `index.js` and route definitions in `
     "key": "catalog.empty",
     "lang": "uk",
     "page": "/catalog",
+    "defaultValue": "Нічого не знайдено",
     "meta": {}
   }
   ```
+  - `GET /api/i18n-missing` returns AI translation status/config summary
+  - `POST /api/i18n-missing` uses Gemini to auto-generate `ua` and `en` values for the key and saves them into MongoDB `translations`
+  - Gemini key/model can now come either from backend env or from admin dashboard settings stored in MongoDB
+  - supported `lang`: `uk`/`ua`, `en`
+  - optional fields: `defaultValue`, `value`, `text`, `fallback`, `force`
+  - if both translations already exist and `force` is not set, backend returns existing values without a new AI call
+  - if AI translation fails, backend still stores a missing translation report in MongoDB and returns `202`; when `defaultValue` is provided it is also saved into the source language translation doc immediately
 
 ## Authenticated User API
 
@@ -229,7 +258,7 @@ Source of truth: current mounted routes in `index.js` and route definitions in `
     "productId": "product_id",
     "productName": "Aurora",
     "productCategory": "sofas",
-    "productImage": "/uploads/products/...",
+    "productImage": "https://res.cloudinary.com/your-cloud/image/upload/v1/products/aurora-preview.jpg",
     "discount": 10,
     "price": 20000
   }
@@ -395,6 +424,121 @@ Admin area is available for `admin` and `superadmin`, but only `superadmin` can 
 - `GET /api/admin/stats`
   - dashboard summary currently includes counts like `products`, `categories`, `users`, `chatConversations`, `locations`, `inventoryRows`, `showcaseRows`, `ts`
 
+### Admin Settings / My Account
+
+- `GET /api/admin/settings`
+  - returns combined dashboard settings payload:
+  ```json
+  {
+    "me": {
+      "firstName": "Admin",
+      "lastName": "User",
+      "email": "admin@example.com",
+      "phone": "+380991112233",
+      "city": "Kyiv",
+      "role": "admin",
+      "status": "active"
+    },
+    "ai": {
+      "provider": "gemini",
+      "model": "gemini-2.5-flash-lite",
+      "geminiModel": "gemini-2.5-flash-lite",
+      "openaiModel": "gpt-5-mini",
+      "hasApiKey": true,
+      "maskedApiKey": "AIza...I2DI"
+    }
+  }
+  ```
+
+- `GET /api/admin/settings/me`
+- `PUT /api/admin/settings/me`
+- `PATCH /api/admin/settings/me`
+
+Account update body:
+
+```json
+{
+  "firstName": "Olena",
+  "lastName": "Koval",
+  "email": "admin@example.com",
+  "phone": "+380991112233",
+  "city": "Kyiv",
+  "currentPassword": "old-secret",
+  "newPassword": "new-secret-123"
+}
+```
+
+Notes:
+
+- `role` and `status` are not editable in self-account route
+- password change requires `currentPassword`
+- response returns the same flat account object:
+```json
+{
+  "firstName": "Admin",
+  "lastName": "User",
+  "email": "admin@example.com",
+  "phone": "+380991112233",
+  "city": "Kyiv",
+  "role": "admin",
+  "status": "active"
+}
+```
+
+### Admin AI Settings
+
+- `GET /api/admin/settings/ai`
+- `PUT /api/admin/settings/ai`
+- `PATCH /api/admin/settings/ai`
+- `PUT /api/admin/settings`
+- `PATCH /api/admin/settings`
+  - root settings `PUT/PATCH` are aliases for AI settings update
+
+AI settings body examples:
+
+```json
+{
+  "provider": "gemini",
+  "apiKey": "AIza...",
+  "model": "gemini-2.5-flash-lite"
+}
+```
+
+```json
+{
+  "provider": "openai",
+  "openaiApiKey": "sk-...",
+  "openaiModel": "gpt-5-mini"
+}
+```
+
+```json
+{
+  "clearApiKey": true,
+  "provider": "gemini"
+}
+```
+
+Response shape:
+
+```json
+{
+  "provider": "gemini",
+  "model": "gemini-2.5-flash-lite",
+  "geminiModel": "gemini-2.5-flash-lite",
+  "openaiModel": "gpt-5-mini",
+  "hasApiKey": true,
+  "maskedApiKey": "AIza...I2DI"
+}
+```
+
+Notes:
+
+- AI keys are stored in MongoDB for dashboard management and masked in responses
+- backend uses stored DB AI settings first, then falls back to env when DB value is absent
+- automatic i18n translation requires Gemini key availability, even if admin chat provider is switched to OpenAI
+- backend never returns raw API keys, only `hasApiKey` and `maskedApiKey`
+
 ### AI Admin
 
 - `GET /api/admin/ai/status`
@@ -435,9 +579,11 @@ When AI reply is actually sent, `message.meta.productCards` may contain clickabl
 - `GET /api/admin/products/:id`
 - `POST /api/admin/products`
 - `PUT /api/admin/products/:id`
+- `PATCH /api/admin/products/:id`
 - `DELETE /api/admin/products/:id`
 
-`POST/PUT /api/admin/products` use `multipart/form-data`.
+`POST/PUT/PATCH /api/admin/products` accept `application/json` or text-only `multipart/form-data`.
+Product media must be sent as URL fields, not uploaded files.
 
 Common fields:
 
@@ -458,8 +604,9 @@ Common fields:
 - `collectionKeys`
 - `featureKeys`
 - `specifications`
+- `previewImage`
+- `modelUrl`
 - `images[]`
-- `modelFile`
 - `keepImages` for edit
 
 ### Categories / Subcategories
