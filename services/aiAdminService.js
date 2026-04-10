@@ -18,11 +18,15 @@ import {
   buildLocationPresentation,
   loadLocationTranslations,
 } from "./locationPresentationService.js";
+import {
+  getAdminAiSettingsView,
+  getEffectiveAiConfig,
+} from "./aiConfigService.js";
 
 let openaiClient = null;
+let openaiClientApiKey = "";
 
 const DEFAULT_OPENAI_MODEL = "gpt-5-mini";
-const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-lite";
 const MAX_TOOL_ROUNDS = 6;
 const AI_LOCATION_LANG = "ua";
 const LOCATION_SELECT =
@@ -327,63 +331,43 @@ const getAiLocationTranslations = async () => loadLocationTranslations(AI_LOCATI
 const presentAiLocation = (locationDoc, translations) =>
   buildLocationPresentation(locationDoc || {}, translations);
 
-const getAiProvider = () => {
-  const explicitProvider = pickStr(process.env.AI_PROVIDER).toLowerCase();
-  if (explicitProvider === "gemini" || explicitProvider === "openai") {
-    return explicitProvider;
-  }
-
-  if (pickStr(process.env.GEMINI_API_KEY)) return "gemini";
-  if (pickStr(process.env.OPENAI_API_KEY)) return "openai";
-
-  return "gemini";
-};
-
-const getOpenAiClient = () => {
-  const apiKey = pickStr(process.env.OPENAI_API_KEY);
-  if (!apiKey) {
+const getOpenAiClient = (apiKey) => {
+  const safeApiKey = pickStr(apiKey);
+  if (!safeApiKey) {
     const err = new Error("OPENAI_API_KEY is not configured");
     err.statusCode = 503;
     throw err;
   }
 
-  if (!openaiClient) {
-    openaiClient = new OpenAI({ apiKey });
+  if (!openaiClient || openaiClientApiKey !== safeApiKey) {
+    openaiClient = new OpenAI({ apiKey: safeApiKey });
+    openaiClientApiKey = safeApiKey;
   }
 
   return openaiClient;
 };
 
-const getGeminiApiKey = () => {
-  const apiKey = pickStr(process.env.GEMINI_API_KEY);
-  if (!apiKey) {
+const getGeminiApiUrl = (model, apiKey) => {
+  const safeApiKey = pickStr(apiKey);
+  if (!safeApiKey) {
     const err = new Error("GEMINI_API_KEY is not configured");
     err.statusCode = 503;
     throw err;
   }
 
-  return apiKey;
-};
-
-const getGeminiApiUrl = (model) =>
-  `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+  return `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
     model
-  )}:generateContent?key=${encodeURIComponent(getGeminiApiKey())}`;
-
-export const getAiAdminModel = () => {
-  const provider = getAiProvider();
-
-  if (provider === "gemini") {
-    return pickStr(process.env.GEMINI_MODEL) || DEFAULT_GEMINI_MODEL;
-  }
-
-  return pickStr(process.env.OPENAI_MODEL) || DEFAULT_OPENAI_MODEL;
+  )}:generateContent?key=${encodeURIComponent(safeApiKey)}`;
 };
 
-export const isAiAdminEnabled = () => {
-  const provider = getAiProvider();
-  if (provider === "gemini") return Boolean(pickStr(process.env.GEMINI_API_KEY));
-  return Boolean(pickStr(process.env.OPENAI_API_KEY));
+export const getAiAdminModel = async () => {
+  const aiConfig = await getEffectiveAiConfig();
+  return pickStr(aiConfig.activeModel) || DEFAULT_OPENAI_MODEL;
+};
+
+export const isAiAdminEnabled = async () => {
+  const aiConfig = await getEffectiveAiConfig();
+  return Boolean(aiConfig.isEnabled);
 };
 
 const createProviderError = (message, statusCode = 500, raw = null) => {
@@ -470,13 +454,14 @@ const extractGeminiCandidate = (responseJson) => {
 };
 
 const callGeminiGenerateContent = async ({
+  apiKey,
   model,
   systemInstruction,
   contents,
   tools,
   maxOutputTokens = 700,
 }) => {
-  const response = await fetch(getGeminiApiUrl(model), {
+  const response = await fetch(getGeminiApiUrl(model, apiKey), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -521,6 +506,7 @@ const callGeminiGenerateContent = async ({
 
   return responseJson;
 };
+
 
 export const ensureAiAdminUser = async () => {
   const preferredEmail = pickStr(process.env.AI_ADMIN_EMAIL);
@@ -1041,7 +1027,7 @@ const executeAiTool = async ({
       text,
       source: "ai_admin",
       meta: buildAiMessageMeta({
-        provider: context.provider || getAiProvider(),
+        provider: context.provider || "gemini",
         model: context.model,
         currentAdmin: context.currentAdmin,
         responseId: context.latestResponseId || "",
@@ -1165,16 +1151,32 @@ const buildAiTools = ({ sendEnabled }) => {
 };
 
 export const getAiAdminStatus = async () => {
-  const aiUser =
+  const aiSettings = await getAdminAiSettingsView();
+  let aiUser =
     (await User.findOne({ role: { $in: ADMIN_ROLES }, isAiAssistant: true })
       .select("_id name email")
       .lean()) || null;
-  const provider = getAiProvider();
+
+  if (aiSettings.enabled && !aiUser) {
+    try {
+      const ensuredAiUser = await ensureAiAdminUser();
+      aiUser = ensuredAiUser
+        ? {
+            _id: ensuredAiUser._id,
+            name: ensuredAiUser.name,
+            email: ensuredAiUser.email,
+          }
+        : null;
+    } catch {
+      aiUser = null;
+    }
+  }
 
   return {
-    enabled: isAiAdminEnabled(),
-    provider,
-    model: getAiAdminModel(),
+    enabled: aiSettings.enabled,
+    provider: aiSettings.provider,
+    model: aiSettings.activeModel,
+    aiSettings,
     aiAdmin: aiUser
       ? {
           id: String(aiUser._id),
@@ -1227,6 +1229,7 @@ const finalizeAiReply = async ({
 };
 
 const runOpenAiAdminReply = async ({
+  apiKey,
   model,
   aiAdminUser,
   chatUser,
@@ -1237,7 +1240,7 @@ const runOpenAiAdminReply = async ({
   responseInput,
   prefetchedProductSearch,
 }) => {
-  const client = getOpenAiClient();
+  const client = getOpenAiClient(apiKey);
   const toolState = {
     sentMessage: null,
     toolCalls: [],
@@ -1348,6 +1351,7 @@ const runOpenAiAdminReply = async ({
 };
 
 const runGeminiAdminReply = async ({
+  apiKey,
   model,
   aiAdminUser,
   chatUser,
@@ -1378,6 +1382,7 @@ const runGeminiAdminReply = async ({
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
     const responseJson = await callGeminiGenerateContent({
+      apiKey,
       model,
       systemInstruction: instructions,
       contents: conversationContents,
@@ -1482,8 +1487,24 @@ export const runAiAdminReply = async ({
   send = false,
   historyLimit = 30,
 }) => {
-  const provider = getAiProvider();
-  const model = getAiAdminModel();
+  const aiConfig = await getEffectiveAiConfig();
+  const provider = aiConfig.provider;
+  const model = pickStr(aiConfig.activeModel) || DEFAULT_OPENAI_MODEL;
+  const apiKey =
+    provider === "openai"
+      ? pickStr(aiConfig.openaiApiKey)
+      : pickStr(aiConfig.geminiApiKey);
+
+  if (!apiKey) {
+    const error = new Error(
+      provider === "openai"
+        ? "OPENAI_API_KEY is not configured"
+        : "GEMINI_API_KEY is not configured"
+    );
+    error.statusCode = 503;
+    throw error;
+  }
+
   const aiAdminUser = await ensureAiAdminUser();
   const chatUser = await findChatUser(chatUserId);
   const { adminMap } = await loadAdminIndex();
@@ -1602,6 +1623,7 @@ export const runAiAdminReply = async ({
   try {
     if (provider === "gemini") {
       return await runGeminiAdminReply({
+        apiKey,
         model,
         aiAdminUser,
         chatUser,
@@ -1615,6 +1637,7 @@ export const runAiAdminReply = async ({
     }
 
     return await runOpenAiAdminReply({
+      apiKey,
       model,
       aiAdminUser,
       chatUser,
