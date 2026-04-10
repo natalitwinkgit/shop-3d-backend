@@ -9,6 +9,7 @@ import inventoryRoutes from "./routes/inventory.routes.js";
 import locationsRoutes from "./routes/locations.routes.js";
 import ordersRoutes from "./routes/orders.routes.js";
 import productsRoutes from "./routes/products.routes.js";
+import settingsRoutes from "./routes/settings.routes.js";
 import specRoutes from "./routes/spec.routes.js";
 import subcategoriesRoutes from "./routes/subcategories.routes.js";
 import usersRoutes from "./routes/users.routes.js";
@@ -18,6 +19,7 @@ const router = Router();
 router.use(protect, admin);
 
 router.use(dashboardRoutes);
+router.use("/settings", settingsRoutes);
 router.use(productsRoutes);
 router.use(categoriesRoutes);
 router.use(subcategoriesRoutes);

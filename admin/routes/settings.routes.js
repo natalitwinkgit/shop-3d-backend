@@ -1,28 +1,24 @@
-// server/admin/routes/settings.routes.js
 import { Router } from "express";
+import {
+  getAdminAiSettings,
+  getAdminSettingsOverview,
+  getMyAdminAccount,
+  updateAdminAiSettings,
+  updateMyAdminAccount,
+} from "../../controllers/adminSettingsController.js";
 
 const router = Router();
 
-/**
- * Мінімальна заглушка, щоб сервер не падав.
- * Пізніше сюди можна додати реальні налаштування (валюти, довідники, конфіги фільтрів тощо).
- */
+router.get("/", getAdminSettingsOverview);
+router.put("/", updateAdminAiSettings);
+router.patch("/", updateAdminAiSettings);
 
-// GET /api/admin/settings
-router.get("/", async (req, res) => {
-  res.json({
-    ok: true,
-    data: {},
-  });
-});
+router.get("/me", getMyAdminAccount);
+router.put("/me", updateMyAdminAccount);
+router.patch("/me", updateMyAdminAccount);
 
-// PUT /api/admin/settings
-router.put("/", async (req, res) => {
-  // Тут можна зберігати конфіг у MongoDB (колекція Settings)
-  res.json({
-    ok: true,
-    saved: req.body ?? {},
-  });
-});
+router.get("/ai", getAdminAiSettings);
+router.put("/ai", updateAdminAiSettings);
+router.patch("/ai", updateAdminAiSettings);
 
 export default router;
