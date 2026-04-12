@@ -1,4 +1,9 @@
 import { normalizeRoomKeys } from "./catalogNormalizationService.js";
+import {
+  buildProductSku,
+  buildProductSlug,
+  buildProductTypeKey,
+} from "./productIdentityService.js";
 
 const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
 const isPlainObject = (value) =>
@@ -25,15 +30,6 @@ export const createHttpError = (statusCode, message) => {
   error.statusCode = statusCode;
   return error;
 };
-
-const slugify = (value) =>
-  String(value || "")
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
 
 const parseStringField = (
   value,
@@ -95,7 +91,7 @@ const parseStringArrayField = (value, fieldName) => {
     source = parsed;
   } else if (typeof parsed === "string") {
     const trimmed = parsed.trim();
-    source = trimmed ? trimmed.split(",") : [];
+    source = trimmed ? trimmed.split(/[\r\n,;]+/) : [];
   } else {
     throw createHttpError(400, `${fieldName} must be an array of strings`);
   }
@@ -224,12 +220,15 @@ export const buildProductMutationPayload = ({
     payload.subCategory = null;
   }
 
-  if (hasOwn(body, "slug") || isCreate) {
+  const shouldResolveSlug =
+    hasOwn(body, "slug") || isCreate || (!trimString(existingProduct?.slug) && !!existingProduct);
+  if (shouldResolveSlug) {
     const providedSlug = parseStringField(body.slug, "slug") || "";
-    const generatedSlug = slugify(
-      providedSlug || payload.name?.en || payload.name?.ua || existingProduct?.name?.en || existingProduct?.name?.ua
-    );
-    const nextSlug = providedSlug || generatedSlug || trimString(existingProduct?.slug);
+    const nextSlug = buildProductSlug({
+      providedSlug,
+      name: payload.name || existingProduct?.name,
+      fallbackSlug: existingProduct?.slug,
+    });
 
     if (!nextSlug) {
       throw createHttpError(400, "slug is required");
@@ -242,13 +241,36 @@ export const buildProductMutationPayload = ({
   const effectiveSubCategory =
     payload.subCategory !== undefined ? payload.subCategory : existingProduct?.subCategory;
 
+  const shouldResolveTypeKey =
+    hasOwn(body, "typeKey") ||
+    isCreate ||
+    hasOwn(body, "category") ||
+    hasOwn(body, "subCategory") ||
+    !trimString(existingProduct?.typeKey);
+
   if (hasOwn(body, "typeKey")) {
     payload.typeKey = parseStringField(body.typeKey, "typeKey") || "";
-  } else if (isCreate || hasOwn(body, "category") || hasOwn(body, "subCategory")) {
-    payload.typeKey =
-      effectiveCategory && effectiveSubCategory
-        ? `${effectiveCategory}:${effectiveSubCategory}`
-        : trimString(existingProduct?.typeKey);
+  } else if (shouldResolveTypeKey) {
+    payload.typeKey = buildProductTypeKey({
+      category: effectiveCategory,
+      subCategory: effectiveSubCategory,
+      fallbackTypeKey: existingProduct?.typeKey,
+    });
+  }
+
+  const shouldResolveSku =
+    hasOwn(body, "sku") || isCreate || !trimString(existingProduct?.sku);
+
+  if (hasOwn(body, "sku")) {
+    payload.sku = parseStringField(body.sku, "sku", { strict: true }) || trimString(existingProduct?.sku);
+  } else if (shouldResolveSku) {
+    payload.sku = buildProductSku({
+      category: effectiveCategory,
+      subCategory: effectiveSubCategory,
+      slug: payload.slug ?? existingProduct?.slug,
+      name: payload.name || existingProduct?.name,
+      fallbackSku: existingProduct?.sku,
+    });
   }
 
   if (hasOwn(body, "status") || isCreate) {
@@ -259,7 +281,7 @@ export const buildProductMutationPayload = ({
   if (styleKeys !== undefined) payload.styleKeys = styleKeys;
   else if (isCreate) payload.styleKeys = [];
 
-  const colorKeys = parseStringArrayField(body.colorKeys, "colorKeys");
+  const colorKeys = parseStringArrayField(body.colorKeys ?? body.colors, "colorKeys");
   if (colorKeys !== undefined) payload.colorKeys = colorKeys;
   else if (isCreate) payload.colorKeys = [];
 
@@ -292,15 +314,25 @@ export const buildProductMutationPayload = ({
     }
   }
 
-  const previewImageProvided = hasOwn(body, "previewImage");
-  const imagesProvided = hasOwn(body, "images") || hasOwn(body, "keepImages");
-  const modelUrlProvided = hasOwn(body, "modelUrl");
+  const previewImageField = ["previewImage", "imageUrl", "coverImageUrl", "mainImageUrl"].find(
+    (field) => hasOwn(body, field)
+  );
+  const imagesField = ["images", "keepImages", "imageUrls", "galleryUrls", "photoUrls", "photos"].find(
+    (field) => hasOwn(body, field)
+  );
+  const modelUrlField = ["modelUrl", "model3dUrl", "model3DUrl", "glbUrl"].find((field) =>
+    hasOwn(body, field)
+  );
+
+  const previewImageProvided = Boolean(previewImageField);
+  const imagesProvided = Boolean(imagesField);
+  const modelUrlProvided = Boolean(modelUrlField);
 
   const previewImage = previewImageProvided
-    ? parseStringField(body.previewImage, "previewImage", { strict: true }) || ""
+    ? parseStringField(body[previewImageField], previewImageField, { strict: true }) || ""
     : undefined;
   const imageList = imagesProvided
-    ? parseStringArrayField(hasOwn(body, "images") ? body.images : body.keepImages, hasOwn(body, "images") ? "images" : "keepImages") || []
+    ? parseStringArrayField(body[imagesField], imagesField) || []
     : undefined;
   const currentImages = Array.isArray(existingProduct?.images) ? existingProduct.images : [];
   const currentPreview =
@@ -320,7 +352,7 @@ export const buildProductMutationPayload = ({
 
   if (modelUrlProvided || isCreate) {
     payload.modelUrl = modelUrlProvided
-      ? parseStringField(body.modelUrl, "modelUrl", { strict: true }) || ""
+      ? parseStringField(body[modelUrlField], modelUrlField, { strict: true }) || ""
       : trimString(existingProduct?.modelUrl);
   }
 

@@ -6,6 +6,7 @@ const productSchema = new mongoose.Schema(
     name: { ua: { type: String, required: true }, en: { type: String, required: true } },
     description: { ua: { type: String, default: "" }, en: { type: String, default: "" } },
 
+    sku: { type: String, default: "", trim: true, index: true },
     slug: { type: String, required: true, unique: true, index: true },
     category: { type: String, required: true, index: true },
     subCategory: { type: String, default: null, index: true },
