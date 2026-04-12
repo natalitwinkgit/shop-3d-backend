@@ -83,6 +83,10 @@ Source of truth: current mounted routes in `index.js` and route definitions in `
   - `POST/PUT/PATCH/DELETE` require admin auth
   - `POST/PUT/PATCH` accept `application/json` or text-only `multipart/form-data`
   - backend expects ready-to-use URL strings for `previewImage` and `modelUrl`; product media files are not uploaded through backend anymore
+  - backend auto-generates `slug`, `typeKey`, and `sku` when they are omitted
+  - for gallery URLs, backend accepts `images`, `imageUrls`, `galleryUrls`, or `photoUrls`
+  - URL lists can be sent as a JSON array, comma-separated string, or newline-separated string
+  - for 3D files, backend accepts both `modelUrl` and `model3dUrl`
   - request body supports either localized objects or simple strings for `name` / `description`
   - minimal body example:
   ```json
@@ -90,12 +94,17 @@ Source of truth: current mounted routes in `index.js` and route definitions in `
     "name": "Nordic Lounge Chair",
     "description": "Soft armchair with 3D model",
     "category": "chairs",
+    "subCategory": "soft",
     "price": 12999,
     "previewImage": "https://res.cloudinary.com/your-cloud/image/upload/v1/products/chair-preview.jpg",
+    "images": [
+      "https://res.cloudinary.com/your-cloud/image/upload/v1/products/chair-preview.jpg",
+      "https://res.cloudinary.com/your-cloud/image/upload/v1/products/chair-side.jpg"
+    ],
     "modelUrl": "https://res.cloudinary.com/your-cloud/raw/upload/v1/products/chair.glb"
   }
   ```
-  - product responses include `_id`, `name`, `description`, `price`, `previewImage`, `modelUrl`
+  - product responses include `_id`, `name`, `description`, `price`, `previewImage`, `modelUrl`, `colorKeys`, and optional hydrated `colors`
   - current backend keeps the existing localized shape for `name` / `description` in responses: `{ ua, en }`
 
 ### Categories / Subcategories
@@ -589,6 +598,7 @@ Common fields:
 
 - `name`
 - `description`
+- `sku`
 - `slug`
 - `category`
 - `subCategory`
@@ -608,6 +618,145 @@ Common fields:
 - `modelUrl`
 - `images[]`
 - `keepImages` for edit
+
+### User filter sidebar
+
+The storefront sidebar can load filter options from the products API and then request filtered products with the selected values.
+
+- `GET /api/products/facets` — returns current facet values for the product catalog, including `colorKeys`, `styleKeys`, `roomKeys`, `collectionKeys`, `materialKeys`, and `manufacturerKeys`.
+- `GET /api/products?colorKeys=cream,oak` — filter products by one or more color keys. Product objects store color references in `colorKeys`, and the backend can hydrate matching `colors` from the `colors` collection.
+- `GET /api/products?category=chairs&subCategory=armchairs` — filter by category/subcategory.
+- `GET /api/products?collectionKeys=cozy` — filter by collection.
+- `GET /api/products?priceMin=100&priceMax=500` — filter by price range.
+
+Color values returned in facets are color keys. To show a user-friendly palette and support both exact and nearest-color lookup, use:
+
+- `GET /api/colors` — load the full color palette from the database.
+- `GET /api/colors/search?q=абрикос` — search colors by Ukrainian or English name.
+- `GET /api/colors/nearest?hex=#E32636` — map a selected or custom hex value to the exact or nearest named color.
+- `GET /api/colors/nearest?rgb=227,38,54` — map a selected or custom RGB value to the exact or nearest named color.
+
+Products should keep only color references in `colorKeys`; actual `hex` / `rgb` values should come from the `colors` collection or from hydrated `product.colors`.
+
+#### UI integration flow
+
+1. Load palette values for the filter sidebar:
+   - `GET /api/products/facets` to get available `colorKeys` from actual products.
+   - `GET /api/colors` to resolve those keys into labels, hex and RGB values.
+2. When the user types a color name in the search box:
+   - `GET /api/colors/search?q=<text>` to show matching colors.
+3. When the user selects a palette color:
+   - use the returned color `key` directly in product filtering: `GET /api/products?colorKeys=<colorKey>`.
+4. When the user enters a custom color value:
+   - call `GET /api/colors/nearest?hex=<hex>` or `GET /api/colors/nearest?rgb=<r>,<g>,<b>`.
+   - use `response.color.key` to filter products and show the matched palette color.
+   - `response.exact` tells you whether the chosen value was an exact database color.
+
+#### Recommended frontend logic
+
+The recommended frontend contract is:
+
+- The source of truth for the product-color relation is `product.colorKeys`.
+- The source of truth for actual color data (`name`, `hex`, `rgb`) is the `colors` collection.
+- Use hydrated `product.colors` for product cards/details when it is already present in the response.
+- Use `GET /api/colors` to build a reusable palette map keyed by `color.key`.
+- Use `GET /api/products/facets` to know which color keys are currently available in the catalog.
+
+Recommended page flow:
+
+1. On catalog page load:
+   - request `GET /api/products/facets`
+   - request `GET /api/colors`
+   - request `GET /api/products?...currentFilters`
+2. Build sidebar colors as:
+   - take `facets.colorKeys`
+   - map each key through the palette from `GET /api/colors`
+   - hide unknown keys that are missing in the palette
+3. When user clicks a palette color:
+   - store selected `colorKey` in URL/query state
+   - request `GET /api/products?colorKeys=<colorKey>`
+4. When user uses EyeDropper / custom color:
+   - get browser hex
+   - request `GET /api/colors/nearest?hex=<hex>`
+   - take `response.color.key`
+   - request `GET /api/products?colorKeys=<response.color.key>`
+5. On product card or PDP:
+   - use `product.colors[0]` as primary color when available
+   - fallback to `paletteMap[product.colorKeys[0]]`
+6. Do not store custom RGB in frontend filters or in product payloads:
+   - frontend should always convert custom user color to the nearest backend `colorKey`
+   - filtering should always happen by `colorKey`
+
+Recommended frontend state shape:
+
+```ts
+type CatalogColor = {
+  key: string;
+  name: { ua: string; en: string };
+  hex: string;
+  rgb: [number, number, number];
+  slug?: string | null;
+  group?: string | null;
+  isActive?: boolean;
+};
+
+type CatalogFiltersState = {
+  colorKey: string | null;
+  styleKeys: string[];
+  roomKeys: string[];
+  collectionKeys: string[];
+  materialKeys: string[];
+  manufacturerKeys: string[];
+  priceMin: number | null;
+  priceMax: number | null;
+  q: string;
+};
+```
+
+Recommended API sequence for EyeDropper:
+
+```text
+1. EyeDropper returns #C2B280
+2. GET /api/colors/nearest?hex=%23C2B280
+3. Response.color.key -> "sand"
+4. GET /api/products?colorKeys=sand
+```
+
+### Color helpers
+
+- `GET /api/colors` — return all colors from the database with `key`, `name`, `hex`, `rgb`, and optional `slug`, `group`, `isActive`.
+- `GET /api/colors?active=false` — return all colors, including inactive ones.
+- `GET /api/colors/search?q=...` — search database colors by Ukrainian or English name or key.
+- `GET /api/colors/nearest?hex=#E32636` — return the exact or nearest database color for a selected hex.
+- `GET /api/colors/nearest?rgb=227,38,54` — return the exact or nearest database color for a selected RGB value.
+
+Response shape for `/api/colors/nearest`:
+
+```json
+{
+  "exact": true,
+  "color": {
+    "key": "alizarin-crimson",
+    "ua": "Алізариновий червоний",
+    "en": "Alizarin Crimson",
+    "hex": "#E32636",
+    "rgb": [227, 38, 54]
+  },
+  "query": {
+    "hex": "#E32636",
+    "rgb": [227, 38, 54]
+  },
+  "distance": 0
+}
+```
+
+Notes:
+
+- `sku` is optional; backend generates it automatically when omitted
+- `slug` is optional; backend generates it from product name when omitted
+- `typeKey` is optional; backend builds it from `category` + `subCategory`
+- multiple image URLs can be sent in `images`, `imageUrls`, `galleryUrls`, or `photoUrls`
+- 3D model URL can be sent in `modelUrl` or `model3dUrl`
 
 ### Categories / Subcategories
 

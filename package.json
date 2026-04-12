@@ -6,6 +6,11 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
+    "seed:colors": "node scripts/seedHtmlColors.js",
+    "seed:catalog:reset": "node scripts/seedExtraCategories.js",
+    "seed:categories:extra": "node scripts/seedExtraCategories.js",
+    "products:colors:backfill": "node scripts/backfillProductColors.js",
+    "products:identity:backfill": "node scripts/backfillProductIdentity.js",
     "seed:test": "node scripts/seedTestData.js",
     "seed:test:clear": "node scripts/seedTestData.js --clear"
   },

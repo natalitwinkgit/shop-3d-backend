@@ -1,0 +1,2258 @@
+[
+  {
+    "key": "indianred",
+    "name": {
+      "ua": "Індійський червоний",
+      "en": "IndianRed"
+    },
+    "hex": "#CD5C5C",
+    "rgb": [
+      205,
+      92,
+      92
+    ],
+    "slug": "indianred",
+    "group": "Червоний",
+    "isActive": true
+  },
+  {
+    "key": "lightcoral",
+    "name": {
+      "ua": "Світло кораловий",
+      "en": "LightCoral"
+    },
+    "hex": "#F08080",
+    "rgb": [
+      240,
+      128,
+      128
+    ],
+    "slug": "lightcoral",
+    "group": "Червоний",
+    "isActive": true
+  },
+  {
+    "key": "salmon",
+    "name": {
+      "ua": "Рожево-оранжевий (Лососевий)",
+      "en": "Salmon"
+    },
+    "hex": "#FA8072",
+    "rgb": [
+      250,
+      128,
+      114
+    ],
+    "slug": "salmon",
+    "group": "Червоний",
+    "isActive": true
+  },
+  {
+    "key": "darksalmon",
+    "name": {
+      "ua": "Темно лососевий",
+      "en": "DarkSalmon"
+    },
+    "hex": "#E9967A",
+    "rgb": [
+      233,
+      150,
+      122
+    ],
+    "slug": "darksalmon",
+    "group": "Червоний",
+    "isActive": true
+  },
+  {
+    "key": "lightsalmon",
+    "name": {
+      "ua": "Світло лососевий",
+      "en": "LightSalmon"
+    },
+    "hex": "#FFA07A",
+    "rgb": [
+      255,
+      160,
+      122
+    ],
+    "slug": "lightsalmon",
+    "group": "Червоний",
+    "isActive": true
+  },
+  {
+    "key": "crimson",
+    "name": {
+      "ua": "Малиновий",
+      "en": "Crimson"
+    },
+    "hex": "#DC143C",
+    "rgb": [
+      220,
+      20,
+      60
+    ],
+    "slug": "crimson",
+    "group": "Червоний",
+    "isActive": true
+  },
+  {
+    "key": "red",
+    "name": {
+      "ua": "Червоний",
+      "en": "Red"
+    },
+    "hex": "#FF0000",
+    "rgb": [
+      255,
+      0,
+      0
+    ],
+    "slug": "red",
+    "group": "Червоний",
+    "isActive": true
+  },
+  {
+    "key": "firebrick",
+    "name": {
+      "ua": "Цегляний",
+      "en": "FireBrick"
+    },
+    "hex": "#B22222",
+    "rgb": [
+      178,
+      34,
+      34
+    ],
+    "slug": "firebrick",
+    "group": "Червоний",
+    "isActive": true
+  },
+  {
+    "key": "darkred",
+    "name": {
+      "ua": "Темно червоний",
+      "en": "DarkRed"
+    },
+    "hex": "#8B0000",
+    "rgb": [
+      139,
+      0,
+      0
+    ],
+    "slug": "darkred",
+    "group": "Червоний",
+    "isActive": true
+  },
+  {
+    "key": "pink",
+    "name": {
+      "ua": "Рожевий",
+      "en": "Pink"
+    },
+    "hex": "#FFC0CB",
+    "rgb": [
+      255,
+      192,
+      203
+    ],
+    "slug": "pink",
+    "group": "Рожевий",
+    "isActive": true
+  },
+  {
+    "key": "lightpink",
+    "name": {
+      "ua": "Світло рожевий",
+      "en": "LightPink"
+    },
+    "hex": "#FFB6C1",
+    "rgb": [
+      255,
+      182,
+      193
+    ],
+    "slug": "lightpink",
+    "group": "Рожевий",
+    "isActive": true
+  },
+  {
+    "key": "hotpink",
+    "name": {
+      "ua": "Теплий рожевий",
+      "en": "HotPink"
+    },
+    "hex": "#FF69B4",
+    "rgb": [
+      255,
+      105,
+      180
+    ],
+    "slug": "hotpink",
+    "group": "Рожевий",
+    "isActive": true
+  },
+  {
+    "key": "deeppink",
+    "name": {
+      "ua": "Насичений рожевий",
+      "en": "DeepPink"
+    },
+    "hex": "#FF1493",
+    "rgb": [
+      255,
+      20,
+      147
+    ],
+    "slug": "deeppink",
+    "group": "Рожевий",
+    "isActive": true
+  },
+  {
+    "key": "mediumvioletred",
+    "name": {
+      "ua": "Напівнасичений рожевий",
+      "en": "MediumVioletRed"
+    },
+    "hex": "#C71585",
+    "rgb": [
+      199,
+      21,
+      133
+    ],
+    "slug": "mediumvioletred",
+    "group": "Рожевий",
+    "isActive": true
+  },
+  {
+    "key": "palevioletred",
+    "name": {
+      "ua": "Блідий рожевий",
+      "en": "PaleVioletRed"
+    },
+    "hex": "#DB7093",
+    "rgb": [
+      219,
+      112,
+      147
+    ],
+    "slug": "palevioletred",
+    "group": "Рожевий",
+    "isActive": true
+  },
+  {
+    "key": "coral",
+    "name": {
+      "ua": "Кораловий",
+      "en": "Coral"
+    },
+    "hex": "#FF7F50",
+    "rgb": [
+      255,
+      127,
+      80
+    ],
+    "slug": "coral",
+    "group": "Помаранчевий",
+    "isActive": true
+  },
+  {
+    "key": "tomato",
+    "name": {
+      "ua": "Стиглий томат",
+      "en": "Tomato"
+    },
+    "hex": "#FF6347",
+    "rgb": [
+      255,
+      99,
+      71
+    ],
+    "slug": "tomato",
+    "group": "Помаранчевий",
+    "isActive": true
+  },
+  {
+    "key": "orangered",
+    "name": {
+      "ua": "Оранжево-червоний",
+      "en": "OrangeRed"
+    },
+    "hex": "#FF4500",
+    "rgb": [
+      255,
+      69,
+      0
+    ],
+    "slug": "orangered",
+    "group": "Помаранчевий",
+    "isActive": true
+  },
+  {
+    "key": "darkorange",
+    "name": {
+      "ua": "Темний помаранчевий",
+      "en": "DarkOrange"
+    },
+    "hex": "#FF8C00",
+    "rgb": [
+      255,
+      140,
+      0
+    ],
+    "slug": "darkorange",
+    "group": "Помаранчевий",
+    "isActive": true
+  },
+  {
+    "key": "orange",
+    "name": {
+      "ua": "Помаранчевий",
+      "en": "Orange"
+    },
+    "hex": "#FFA500",
+    "rgb": [
+      255,
+      165,
+      0
+    ],
+    "slug": "orange",
+    "group": "Помаранчевий",
+    "isActive": true
+  },
+  {
+    "key": "gold",
+    "name": {
+      "ua": "Золотий",
+      "en": "Gold"
+    },
+    "hex": "#FFD700",
+    "rgb": [
+      255,
+      215,
+      0
+    ],
+    "slug": "gold",
+    "group": "Жовтий",
+    "isActive": true
+  },
+  {
+    "key": "yellow",
+    "name": {
+      "ua": "Жовтий",
+      "en": "Yellow"
+    },
+    "hex": "#FFFF00",
+    "rgb": [
+      255,
+      255,
+      0
+    ],
+    "slug": "yellow",
+    "group": "Жовтий",
+    "isActive": true
+  },
+  {
+    "key": "lightyellow",
+    "name": {
+      "ua": "Світлий жовтий",
+      "en": "LightYellow"
+    },
+    "hex": "#FFFFE0",
+    "rgb": [
+      255,
+      255,
+      224
+    ],
+    "slug": "lightyellow",
+    "group": "Жовтий",
+    "isActive": true
+  },
+  {
+    "key": "lemonchiffon",
+    "name": {
+      "ua": "Лимонний шифон",
+      "en": "LemonChiffon"
+    },
+    "hex": "#FFFACD",
+    "rgb": [
+      255,
+      250,
+      205
+    ],
+    "slug": "lemonchiffon",
+    "group": "Жовтий",
+    "isActive": true
+  },
+  {
+    "key": "lightgoldenrodyellow",
+    "name": {
+      "ua": "Світлий золотисто-жовтий",
+      "en": "LightGoldenrodYellow"
+    },
+    "hex": "#FAFAD2",
+    "rgb": [
+      250,
+      250,
+      210
+    ],
+    "slug": "lightgoldenrodyellow",
+    "group": "Жовтий",
+    "isActive": true
+  },
+  {
+    "key": "papayawhip",
+    "name": {
+      "ua": "Легкий холодно жовтий",
+      "en": "PapayaWhip"
+    },
+    "hex": "#FFEFD5",
+    "rgb": [
+      255,
+      239,
+      213
+    ],
+    "slug": "papayawhip",
+    "group": "Жовтий",
+    "isActive": true
+  },
+  {
+    "key": "moccasin",
+    "name": {
+      "ua": "Мокасин",
+      "en": "Moccasin"
+    },
+    "hex": "#FFE4B5",
+    "rgb": [
+      255,
+      228,
+      181
+    ],
+    "slug": "moccasin",
+    "group": "Жовтий",
+    "isActive": true
+  },
+  {
+    "key": "peachpuff",
+    "name": {
+      "ua": "Персиковий пух",
+      "en": "PeachPuff"
+    },
+    "hex": "#FFDAB9",
+    "rgb": [
+      255,
+      218,
+      185
+    ],
+    "slug": "peachpuff",
+    "group": "Жовтий",
+    "isActive": true
+  },
+  {
+    "key": "palegoldenrod",
+    "name": {
+      "ua": "Блідий холодний жовтий",
+      "en": "PaleGoldenrod"
+    },
+    "hex": "#EEE8AA",
+    "rgb": [
+      238,
+      232,
+      170
+    ],
+    "slug": "palegoldenrod",
+    "group": "Жовтий",
+    "isActive": true
+  },
+  {
+    "key": "khaki",
+    "name": {
+      "ua": "Хакі",
+      "en": "Khaki"
+    },
+    "hex": "#F0E68C",
+    "rgb": [
+      240,
+      230,
+      140
+    ],
+    "slug": "khaki",
+    "group": "Жовтий",
+    "isActive": true
+  },
+  {
+    "key": "darkkhaki",
+    "name": {
+      "ua": "Темний хакі",
+      "en": "DarkKhaki"
+    },
+    "hex": "#BDB76B",
+    "rgb": [
+      189,
+      183,
+      107
+    ],
+    "slug": "darkkhaki",
+    "group": "Жовтий",
+    "isActive": true
+  },
+  {
+    "key": "lavender",
+    "name": {
+      "ua": "Лавандовий",
+      "en": "Lavender"
+    },
+    "hex": "#E6E6FA",
+    "rgb": [
+      230,
+      230,
+      250
+    ],
+    "slug": "lavender",
+    "group": "Фіолетовий",
+    "isActive": true
+  },
+  {
+    "key": "thistle",
+    "name": {
+      "ua": "Чортополоховий",
+      "en": "Thistle"
+    },
+    "hex": "#D8BFD8",
+    "rgb": [
+      216,
+      191,
+      216
+    ],
+    "slug": "thistle",
+    "group": "Фіолетовий",
+    "isActive": true
+  },
+  {
+    "key": "plum",
+    "name": {
+      "ua": "Сливовий",
+      "en": "Plum"
+    },
+    "hex": "#DDA0DD",
+    "rgb": [
+      221,
+      160,
+      221
+    ],
+    "slug": "plum",
+    "group": "Фіолетовий",
+    "isActive": true
+  },
+  {
+    "key": "violet",
+    "name": {
+      "ua": "Фіолетовий",
+      "en": "Violet"
+    },
+    "hex": "#EE82EE",
+    "rgb": [
+      238,
+      130,
+      238
+    ],
+    "slug": "violet",
+    "group": "Фіолетовий",
+    "isActive": true
+  },
+  {
+    "key": "orchid",
+    "name": {
+      "ua": "Орхідейовий",
+      "en": "Orchid"
+    },
+    "hex": "#DA70D6",
+    "rgb": [
+      218,
+      112,
+      214
+    ],
+    "slug": "orchid",
+    "group": "Фіолетовий",
+    "isActive": true
+  },
+  {
+    "key": "fuchsia",
+    "name": {
+      "ua": "Фуксія",
+      "en": "Fuchsia"
+    },
+    "hex": "#FF00FF",
+    "rgb": [
+      255,
+      0,
+      255
+    ],
+    "slug": "fuchsia",
+    "group": "Фіолетовий",
+    "isActive": true
+  },
+  {
+    "key": "magenta",
+    "name": {
+      "ua": "Пурпурний",
+      "en": "Magenta"
+    },
+    "hex": "#FF00FF",
+    "rgb": [
+      255,
+      0,
+      255
+    ],
+    "slug": "magenta",
+    "group": "Фіолетовий",
+    "isActive": true
+  },
+  {
+    "key": "mediumorchid",
+    "name": {
+      "ua": "Орхідейовий середньої насиченості",
+      "en": "MediumOrchid"
+    },
+    "hex": "#BA55D3",
+    "rgb": [
+      186,
+      85,
+      211
+    ],
+    "slug": "mediumorchid",
+    "group": "Фіолетовий",
+    "isActive": true
+  },
+  {
+    "key": "mediumpurple",
+    "name": {
+      "ua": "Пурпурний середньої насиченості",
+      "en": "MediumPurple"
+    },
+    "hex": "#9370DB",
+    "rgb": [
+      147,
+      112,
+      219
+    ],
+    "slug": "mediumpurple",
+    "group": "Фіолетовий",
+    "isActive": true
+  },
+  {
+    "key": "rebeccapurple",
+    "name": {
+      "ua": "Ребекка Пурпур",
+      "en": "RebeccaPurple"
+    },
+    "hex": "#663399",
+    "rgb": [
+      102,
+      51,
+      153
+    ],
+    "slug": "rebeccapurple",
+    "group": "Фіолетовий",
+    "isActive": true
+  },
+  {
+    "key": "blueviolet",
+    "name": {
+      "ua": "Фіолетовий з синім відтінком",
+      "en": "BlueViolet"
+    },
+    "hex": "#8A2BE2",
+    "rgb": [
+      138,
+      43,
+      226
+    ],
+    "slug": "blueviolet",
+    "group": "Фіолетовий",
+    "isActive": true
+  },
+  {
+    "key": "darkviolet",
+    "name": {
+      "ua": "Темний фіолетовий",
+      "en": "DarkViolet"
+    },
+    "hex": "#9400D3",
+    "rgb": [
+      148,
+      0,
+      211
+    ],
+    "slug": "darkviolet",
+    "group": "Фіолетовий",
+    "isActive": true
+  },
+  {
+    "key": "darkorchid",
+    "name": {
+      "ua": "Темний орхідейовий",
+      "en": "DarkOrchid"
+    },
+    "hex": "#9932CC",
+    "rgb": [
+      153,
+      50,
+      204
+    ],
+    "slug": "darkorchid",
+    "group": "Фіолетовий",
+    "isActive": true
+  },
+  {
+    "key": "darkmagenta",
+    "name": {
+      "ua": "Темний пурпурний",
+      "en": "DarkMagenta"
+    },
+    "hex": "#8B008B",
+    "rgb": [
+      139,
+      0,
+      139
+    ],
+    "slug": "darkmagenta",
+    "group": "Фіолетовий",
+    "isActive": true
+  },
+  {
+    "key": "purple",
+    "name": {
+      "ua": "Пурпурний фіолетовий",
+      "en": "Purple"
+    },
+    "hex": "#800080",
+    "rgb": [
+      128,
+      0,
+      128
+    ],
+    "slug": "purple",
+    "group": "Фіолетовий",
+    "isActive": true
+  },
+  {
+    "key": "indigo",
+    "name": {
+      "ua": "Індиго",
+      "en": "Indigo"
+    },
+    "hex": "#4B0082",
+    "rgb": [
+      75,
+      0,
+      130
+    ],
+    "slug": "indigo",
+    "group": "Фіолетовий",
+    "isActive": true
+  },
+  {
+    "key": "slateblue",
+    "name": {
+      "ua": "Грифельно-синій",
+      "en": "SlateBlue"
+    },
+    "hex": "#6A5ACD",
+    "rgb": [
+      106,
+      90,
+      205
+    ],
+    "slug": "slateblue",
+    "group": "Фіолетовий",
+    "isActive": true
+  },
+  {
+    "key": "darkslateblue",
+    "name": {
+      "ua": "Темний грифельно-синій",
+      "en": "DarkSlateBlue"
+    },
+    "hex": "#483D8B",
+    "rgb": [
+      72,
+      61,
+      139
+    ],
+    "slug": "darkslateblue",
+    "group": "Фіолетовий",
+    "isActive": true
+  },
+  {
+    "key": "mediumslateblue",
+    "name": {
+      "ua": "Середній грифельно-синій",
+      "en": "MediumSlateBlue"
+    },
+    "hex": "#7B68EE",
+    "rgb": [
+      123,
+      104,
+      238
+    ],
+    "slug": "mediumslateblue",
+    "group": "Фіолетовий",
+    "isActive": true
+  },
+  {
+    "key": "greenyellow",
+    "name": {
+      "ua": "Зелений з жовтим відтінком",
+      "en": "GreenYellow"
+    },
+    "hex": "#ADFF2F",
+    "rgb": [
+      173,
+      255,
+      47
+    ],
+    "slug": "greenyellow",
+    "group": "Зелений",
+    "isActive": true
+  },
+  {
+    "key": "chartreuse",
+    "name": {
+      "ua": "Салатовий",
+      "en": "Chartreuse"
+    },
+    "hex": "#7FFF00",
+    "rgb": [
+      127,
+      255,
+      0
+    ],
+    "slug": "chartreuse",
+    "group": "Зелений",
+    "isActive": true
+  },
+  {
+    "key": "lawngreen",
+    "name": {
+      "ua": "Зелений газон",
+      "en": "LawnGreen"
+    },
+    "hex": "#7CFC00",
+    "rgb": [
+      124,
+      252,
+      0
+    ],
+    "slug": "lawngreen",
+    "group": "Зелений",
+    "isActive": true
+  },
+  {
+    "key": "lime",
+    "name": {
+      "ua": "Ляймовий",
+      "en": "Lime"
+    },
+    "hex": "#00FF00",
+    "rgb": [
+      0,
+      255,
+      0
+    ],
+    "slug": "lime",
+    "group": "Зелений",
+    "isActive": true
+  },
+  {
+    "key": "limegreen",
+    "name": {
+      "ua": "Ляймовий з зеленим відтінком",
+      "en": "LimeGreen"
+    },
+    "hex": "#32CD32",
+    "rgb": [
+      50,
+      205,
+      50
+    ],
+    "slug": "limegreen",
+    "group": "Зелений",
+    "isActive": true
+  },
+  {
+    "key": "palegreen",
+    "name": {
+      "ua": "Блідий зелений",
+      "en": "PaleGreen"
+    },
+    "hex": "#98FB98",
+    "rgb": [
+      152,
+      251,
+      152
+    ],
+    "slug": "palegreen",
+    "group": "Зелений",
+    "isActive": true
+  },
+  {
+    "key": "lightgreen",
+    "name": {
+      "ua": "Світлий зелений",
+      "en": "LightGreen"
+    },
+    "hex": "#90EE90",
+    "rgb": [
+      144,
+      238,
+      144
+    ],
+    "slug": "lightgreen",
+    "group": "Зелений",
+    "isActive": true
+  },
+  {
+    "key": "mediumspringgreen",
+    "name": {
+      "ua": "Середній весняний зелений",
+      "en": "MediumSpringGreen"
+    },
+    "hex": "#00FA9A",
+    "rgb": [
+      0,
+      250,
+      154
+    ],
+    "slug": "mediumspringgreen",
+    "group": "Зелений",
+    "isActive": true
+  },
+  {
+    "key": "springgreen",
+    "name": {
+      "ua": "Весняний зелений",
+      "en": "SpringGreen"
+    },
+    "hex": "#00FF7F",
+    "rgb": [
+      0,
+      255,
+      127
+    ],
+    "slug": "springgreen",
+    "group": "Зелений",
+    "isActive": true
+  },
+  {
+    "key": "mediumseagreen",
+    "name": {
+      "ua": "Середній зеленого моря",
+      "en": "MediumSeaGreen"
+    },
+    "hex": "#3CB371",
+    "rgb": [
+      60,
+      179,
+      113
+    ],
+    "slug": "mediumseagreen",
+    "group": "Зелений",
+    "isActive": true
+  },
+  {
+    "key": "seagreen",
+    "name": {
+      "ua": "Зелене море",
+      "en": "SeaGreen"
+    },
+    "hex": "#2E8B57",
+    "rgb": [
+      46,
+      139,
+      87
+    ],
+    "slug": "seagreen",
+    "group": "Зелений",
+    "isActive": true
+  },
+  {
+    "key": "forestgreen",
+    "name": {
+      "ua": "Лісовий зелений",
+      "en": "ForestGreen"
+    },
+    "hex": "#228B22",
+    "rgb": [
+      34,
+      139,
+      34
+    ],
+    "slug": "forestgreen",
+    "group": "Зелений",
+    "isActive": true
+  },
+  {
+    "key": "green",
+    "name": {
+      "ua": "Зелений",
+      "en": "Green"
+    },
+    "hex": "#008000",
+    "rgb": [
+      0,
+      128,
+      0
+    ],
+    "slug": "green",
+    "group": "Зелений",
+    "isActive": true
+  },
+  {
+    "key": "darkgreen",
+    "name": {
+      "ua": "Темно зелений",
+      "en": "DarkGreen"
+    },
+    "hex": "#006400",
+    "rgb": [
+      0,
+      100,
+      0
+    ],
+    "slug": "darkgreen",
+    "group": "Зелений",
+    "isActive": true
+  },
+  {
+    "key": "yellowgreen",
+    "name": {
+      "ua": "Жовтий з зеленим відтінком",
+      "en": "YellowGreen"
+    },
+    "hex": "#9ACD32",
+    "rgb": [
+      154,
+      205,
+      50
+    ],
+    "slug": "yellowgreen",
+    "group": "Зелений",
+    "isActive": true
+  },
+  {
+    "key": "olivedrab",
+    "name": {
+      "ua": "Ніжно оливковий",
+      "en": "OliveDrab"
+    },
+    "hex": "#6B8E23",
+    "rgb": [
+      107,
+      142,
+      35
+    ],
+    "slug": "olivedrab",
+    "group": "Зелений",
+    "isActive": true
+  },
+  {
+    "key": "olive",
+    "name": {
+      "ua": "Оливковий",
+      "en": "Olive"
+    },
+    "hex": "#808000",
+    "rgb": [
+      128,
+      128,
+      0
+    ],
+    "slug": "olive",
+    "group": "Зелений",
+    "isActive": true
+  },
+  {
+    "key": "darkolivegreen",
+    "name": {
+      "ua": "Темний оливковий з зеленим відтінком",
+      "en": "DarkOliveGreen"
+    },
+    "hex": "#556B2F",
+    "rgb": [
+      85,
+      107,
+      47
+    ],
+    "slug": "darkolivegreen",
+    "group": "Зелений",
+    "isActive": true
+  },
+  {
+    "key": "mediumaquamarine",
+    "name": {
+      "ua": "Середній аквамарин",
+      "en": "MediumAquamarine"
+    },
+    "hex": "#66CDAA",
+    "rgb": [
+      102,
+      205,
+      170
+    ],
+    "slug": "mediumaquamarine",
+    "group": "Зелений",
+    "isActive": true
+  },
+  {
+    "key": "darkseagreen",
+    "name": {
+      "ua": "Темний морський зелений",
+      "en": "DarkSeaGreen"
+    },
+    "hex": "#8FBC8F",
+    "rgb": [
+      143,
+      188,
+      143
+    ],
+    "slug": "darkseagreen",
+    "group": "Зелений",
+    "isActive": true
+  },
+  {
+    "key": "lightseagreen",
+    "name": {
+      "ua": "Світлий морський зелений",
+      "en": "LightSeaGreen"
+    },
+    "hex": "#20B2AA",
+    "rgb": [
+      32,
+      178,
+      170
+    ],
+    "slug": "lightseagreen",
+    "group": "Зелений",
+    "isActive": true
+  },
+  {
+    "key": "darkcyan",
+    "name": {
+      "ua": "Темний ціан",
+      "en": "DarkCyan"
+    },
+    "hex": "#008B8B",
+    "rgb": [
+      0,
+      139,
+      139
+    ],
+    "slug": "darkcyan",
+    "group": "Зелений",
+    "isActive": true
+  },
+  {
+    "key": "teal",
+    "name": {
+      "ua": "Зеленувато-блакитний",
+      "en": "Teal"
+    },
+    "hex": "#008080",
+    "rgb": [
+      0,
+      128,
+      128
+    ],
+    "slug": "teal",
+    "group": "Зелений",
+    "isActive": true
+  },
+  {
+    "key": "aqua",
+    "name": {
+      "ua": "Морської хвилі",
+      "en": "Aqua"
+    },
+    "hex": "#00FFFF",
+    "rgb": [
+      0,
+      255,
+      255
+    ],
+    "slug": "aqua",
+    "group": "Синій",
+    "isActive": true
+  },
+  {
+    "key": "cyan",
+    "name": {
+      "ua": "Ціан",
+      "en": "Cyan"
+    },
+    "hex": "#00FFFF",
+    "rgb": [
+      0,
+      255,
+      255
+    ],
+    "slug": "cyan",
+    "group": "Синій",
+    "isActive": true
+  },
+  {
+    "key": "lightcyan",
+    "name": {
+      "ua": "Світлий ціан",
+      "en": "LightCyan"
+    },
+    "hex": "#E0FFFF",
+    "rgb": [
+      224,
+      255,
+      255
+    ],
+    "slug": "lightcyan",
+    "group": "Синій",
+    "isActive": true
+  },
+  {
+    "key": "paleturquoise",
+    "name": {
+      "ua": "Білий відтінок кольору бірюзі",
+      "en": "PaleTurquoise"
+    },
+    "hex": "#AFEEEE",
+    "rgb": [
+      175,
+      238,
+      238
+    ],
+    "slug": "paleturquoise",
+    "group": "Синій",
+    "isActive": true
+  },
+  {
+    "key": "aquamarine",
+    "name": {
+      "ua": "Аквамариновий",
+      "en": "Aquamarine"
+    },
+    "hex": "#7FFFD4",
+    "rgb": [
+      127,
+      255,
+      212
+    ],
+    "slug": "aquamarine",
+    "group": "Синій",
+    "isActive": true
+  },
+  {
+    "key": "turquoise",
+    "name": {
+      "ua": "Бірюзовий",
+      "en": "Turquoise"
+    },
+    "hex": "#40E0D0",
+    "rgb": [
+      64,
+      224,
+      208
+    ],
+    "slug": "turquoise",
+    "group": "Синій",
+    "isActive": true
+  },
+  {
+    "key": "mediumturquoise",
+    "name": {
+      "ua": "Середній бірюзовий",
+      "en": "MediumTurquoise"
+    },
+    "hex": "#48D1CC",
+    "rgb": [
+      72,
+      209,
+      204
+    ],
+    "slug": "mediumturquoise",
+    "group": "Синій",
+    "isActive": true
+  },
+  {
+    "key": "darkturquoise",
+    "name": {
+      "ua": "Темний бірюзовий",
+      "en": "DarkTurquoise"
+    },
+    "hex": "#00CED1",
+    "rgb": [
+      0,
+      206,
+      209
+    ],
+    "slug": "darkturquoise",
+    "group": "Синій",
+    "isActive": true
+  },
+  {
+    "key": "cadetblue",
+    "name": {
+      "ua": "Сіро синій",
+      "en": "CadetBlue"
+    },
+    "hex": "#5F9EA0",
+    "rgb": [
+      95,
+      158,
+      160
+    ],
+    "slug": "cadetblue",
+    "group": "Синій",
+    "isActive": true
+  },
+  {
+    "key": "steelblue",
+    "name": {
+      "ua": "Синя сталь",
+      "en": "SteelBlue"
+    },
+    "hex": "#4682B4",
+    "rgb": [
+      70,
+      130,
+      180
+    ],
+    "slug": "steelblue",
+    "group": "Синій",
+    "isActive": true
+  },
+  {
+    "key": "lightsteelblue",
+    "name": {
+      "ua": "Світла синя сталь",
+      "en": "LightSteelBlue"
+    },
+    "hex": "#B0C4DE",
+    "rgb": [
+      176,
+      196,
+      222
+    ],
+    "slug": "lightsteelblue",
+    "group": "Синій",
+    "isActive": true
+  },
+  {
+    "key": "powderblue",
+    "name": {
+      "ua": "Синя пиль",
+      "en": "PowderBlue"
+    },
+    "hex": "#B0E0E6",
+    "rgb": [
+      176,
+      224,
+      230
+    ],
+    "slug": "powderblue",
+    "group": "Синій",
+    "isActive": true
+  },
+  {
+    "key": "lightblue",
+    "name": {
+      "ua": "Світло синій",
+      "en": "LightBlue"
+    },
+    "hex": "#ADD8E6",
+    "rgb": [
+      173,
+      216,
+      230
+    ],
+    "slug": "lightblue",
+    "group": "Синій",
+    "isActive": true
+  },
+  {
+    "key": "skyblue",
+    "name": {
+      "ua": "Небесно-синій",
+      "en": "SkyBlue"
+    },
+    "hex": "#87CEEB",
+    "rgb": [
+      135,
+      206,
+      235
+    ],
+    "slug": "skyblue",
+    "group": "Синій",
+    "isActive": true
+  },
+  {
+    "key": "lightskyblue",
+    "name": {
+      "ua": "Світла небесно-синій",
+      "en": "LightSkyBlue"
+    },
+    "hex": "#87CEFA",
+    "rgb": [
+      135,
+      206,
+      250
+    ],
+    "slug": "lightskyblue",
+    "group": "Синій",
+    "isActive": true
+  },
+  {
+    "key": "deepskyblue",
+    "name": {
+      "ua": "Глибокий небесно-синій",
+      "en": "DeepSkyBlue"
+    },
+    "hex": "#00BFFF",
+    "rgb": [
+      0,
+      191,
+      255
+    ],
+    "slug": "deepskyblue",
+    "group": "Синій",
+    "isActive": true
+  },
+  {
+    "key": "dodgerblue",
+    "name": {
+      "ua": "Захисний синій",
+      "en": "DodgerBlue"
+    },
+    "hex": "#1E90FF",
+    "rgb": [
+      30,
+      144,
+      255
+    ],
+    "slug": "dodgerblue",
+    "group": "Синій",
+    "isActive": true
+  },
+  {
+    "key": "cornflowerblue",
+    "name": {
+      "ua": "Блаватний",
+      "en": "CornflowerBlue"
+    },
+    "hex": "#6495ED",
+    "rgb": [
+      100,
+      149,
+      237
+    ],
+    "slug": "cornflowerblue",
+    "group": "Синій",
+    "isActive": true
+  },
+  {
+    "key": "royalblue",
+    "name": {
+      "ua": "Королівський синій",
+      "en": "RoyalBlue"
+    },
+    "hex": "#4169E1",
+    "rgb": [
+      65,
+      105,
+      225
+    ],
+    "slug": "royalblue",
+    "group": "Синій",
+    "isActive": true
+  },
+  {
+    "key": "blue",
+    "name": {
+      "ua": "Синій",
+      "en": "Blue"
+    },
+    "hex": "#0000FF",
+    "rgb": [
+      0,
+      0,
+      255
+    ],
+    "slug": "blue",
+    "group": "Синій",
+    "isActive": true
+  },
+  {
+    "key": "mediumblue",
+    "name": {
+      "ua": "Середній синій",
+      "en": "MediumBlue"
+    },
+    "hex": "#0000CD",
+    "rgb": [
+      0,
+      0,
+      205
+    ],
+    "slug": "mediumblue",
+    "group": "Синій",
+    "isActive": true
+  },
+  {
+    "key": "darkblue",
+    "name": {
+      "ua": "Темно синій",
+      "en": "DarkBlue"
+    },
+    "hex": "#00008B",
+    "rgb": [
+      0,
+      0,
+      139
+    ],
+    "slug": "darkblue",
+    "group": "Синій",
+    "isActive": true
+  },
+  {
+    "key": "navy",
+    "name": {
+      "ua": "Неви",
+      "en": "Navy"
+    },
+    "hex": "#000080",
+    "rgb": [
+      0,
+      0,
+      128
+    ],
+    "slug": "navy",
+    "group": "Синій",
+    "isActive": true
+  },
+  {
+    "key": "midnightblue",
+    "name": {
+      "ua": "Опівнічно-синій",
+      "en": "MidnightBlue"
+    },
+    "hex": "#191970",
+    "rgb": [
+      25,
+      25,
+      112
+    ],
+    "slug": "midnightblue",
+    "group": "Синій",
+    "isActive": true
+  },
+  {
+    "key": "cornsilk",
+    "name": {
+      "ua": "Кукурудзяний",
+      "en": "Cornsilk"
+    },
+    "hex": "#FFF8DC",
+    "rgb": [
+      255,
+      248,
+      220
+    ],
+    "slug": "cornsilk",
+    "group": "Коричневий",
+    "isActive": true
+  },
+  {
+    "key": "blanchedalmond",
+    "name": {
+      "ua": "Бланшированний мигдаль",
+      "en": "BlanchedAlmond"
+    },
+    "hex": "#FFEBCD",
+    "rgb": [
+      255,
+      235,
+      205
+    ],
+    "slug": "blanchedalmond",
+    "group": "Коричневий",
+    "isActive": true
+  },
+  {
+    "key": "bisque",
+    "name": {
+      "ua": "Бісквітний",
+      "en": "Bisque"
+    },
+    "hex": "#FFE4C4",
+    "rgb": [
+      255,
+      228,
+      196
+    ],
+    "slug": "bisque",
+    "group": "Коричневий",
+    "isActive": true
+  },
+  {
+    "key": "navajowhite",
+    "name": {
+      "ua": "Білий навахо",
+      "en": "NavajoWhite"
+    },
+    "hex": "#FFDEAD",
+    "rgb": [
+      255,
+      222,
+      173
+    ],
+    "slug": "navajowhite",
+    "group": "Коричневий",
+    "isActive": true
+  },
+  {
+    "key": "wheat",
+    "name": {
+      "ua": "Пшеничний",
+      "en": "Wheat"
+    },
+    "hex": "#F5DEB3",
+    "rgb": [
+      245,
+      222,
+      179
+    ],
+    "slug": "wheat",
+    "group": "Коричневий",
+    "isActive": true
+  },
+  {
+    "key": "burlywood",
+    "name": {
+      "ua": "Жовтуватий",
+      "en": "BurlyWood"
+    },
+    "hex": "#DEB887",
+    "rgb": [
+      222,
+      184,
+      135
+    ],
+    "slug": "burlywood",
+    "group": "Коричневий",
+    "isActive": true
+  },
+  {
+    "key": "tan",
+    "name": {
+      "ua": "Колір засмаги",
+      "en": "Tan"
+    },
+    "hex": "#D2B48C",
+    "rgb": [
+      210,
+      180,
+      140
+    ],
+    "slug": "tan",
+    "group": "Коричневий",
+    "isActive": true
+  },
+  {
+    "key": "rosybrown",
+    "name": {
+      "ua": "Розово-коричневий",
+      "en": "RosyBrown"
+    },
+    "hex": "#BC8F8F",
+    "rgb": [
+      188,
+      143,
+      143
+    ],
+    "slug": "rosybrown",
+    "group": "Коричневий",
+    "isActive": true
+  },
+  {
+    "key": "sandybrown",
+    "name": {
+      "ua": "Пісочний",
+      "en": "SandyBrown"
+    },
+    "hex": "#F4A460",
+    "rgb": [
+      244,
+      164,
+      96
+    ],
+    "slug": "sandybrown",
+    "group": "Коричневий",
+    "isActive": true
+  },
+  {
+    "key": "goldenrod",
+    "name": {
+      "ua": "Золотаво-березовий",
+      "en": "Goldenrod"
+    },
+    "hex": "#DAA520",
+    "rgb": [
+      218,
+      165,
+      32
+    ],
+    "slug": "goldenrod",
+    "group": "Коричневий",
+    "isActive": true
+  },
+  {
+    "key": "darkgoldenrod",
+    "name": {
+      "ua": "Темно-золотий",
+      "en": "DarkGoldenrod"
+    },
+    "hex": "#B8860B",
+    "rgb": [
+      184,
+      134,
+      11
+    ],
+    "slug": "darkgoldenrod",
+    "group": "Коричневий",
+    "isActive": true
+  },
+  {
+    "key": "peru",
+    "name": {
+      "ua": "Перу",
+      "en": "Peru"
+    },
+    "hex": "#CD853F",
+    "rgb": [
+      205,
+      133,
+      63
+    ],
+    "slug": "peru",
+    "group": "Коричневий",
+    "isActive": true
+  },
+  {
+    "key": "chocolate",
+    "name": {
+      "ua": "Шоколадний",
+      "en": "Chocolate"
+    },
+    "hex": "#D2691E",
+    "rgb": [
+      210,
+      105,
+      30
+    ],
+    "slug": "chocolate",
+    "group": "Коричневий",
+    "isActive": true
+  },
+  {
+    "key": "saddlebrown",
+    "name": {
+      "ua": "Шкіряно-коричневий",
+      "en": "SaddleBrown"
+    },
+    "hex": "#8B4513",
+    "rgb": [
+      139,
+      69,
+      19
+    ],
+    "slug": "saddlebrown",
+    "group": "Коричневий",
+    "isActive": true
+  },
+  {
+    "key": "sienna",
+    "name": {
+      "ua": "Охра",
+      "en": "Sienna"
+    },
+    "hex": "#A0522D",
+    "rgb": [
+      160,
+      82,
+      45
+    ],
+    "slug": "sienna",
+    "group": "Коричневий",
+    "isActive": true
+  },
+  {
+    "key": "brown",
+    "name": {
+      "ua": "Коричневий",
+      "en": "Brown"
+    },
+    "hex": "#A52A2A",
+    "rgb": [
+      165,
+      42,
+      42
+    ],
+    "slug": "brown",
+    "group": "Коричневий",
+    "isActive": true
+  },
+  {
+    "key": "maroon",
+    "name": {
+      "ua": "Темно-бордовий",
+      "en": "Maroon"
+    },
+    "hex": "#800000",
+    "rgb": [
+      128,
+      0,
+      0
+    ],
+    "slug": "maroon",
+    "group": "Коричневий",
+    "isActive": true
+  },
+  {
+    "key": "white",
+    "name": {
+      "ua": "Білий",
+      "en": "White"
+    },
+    "hex": "#FFFFFF",
+    "rgb": [
+      255,
+      255,
+      255
+    ],
+    "slug": "white",
+    "group": "Білий",
+    "isActive": true
+  },
+  {
+    "key": "snow",
+    "name": {
+      "ua": "Білосніжний",
+      "en": "Snow"
+    },
+    "hex": "#FFFAFA",
+    "rgb": [
+      255,
+      250,
+      250
+    ],
+    "slug": "snow",
+    "group": "Білий",
+    "isActive": true
+  },
+  {
+    "key": "honeydew",
+    "name": {
+      "ua": "Медова роса",
+      "en": "HoneyDew"
+    },
+    "hex": "#F0FFF0",
+    "rgb": [
+      240,
+      255,
+      240
+    ],
+    "slug": "honeydew",
+    "group": "Білий",
+    "isActive": true
+  },
+  {
+    "key": "mintcream",
+    "name": {
+      "ua": "М'ятний крем",
+      "en": "MintCream"
+    },
+    "hex": "#F5FFFA",
+    "rgb": [
+      245,
+      255,
+      250
+    ],
+    "slug": "mintcream",
+    "group": "Білий",
+    "isActive": true
+  },
+  {
+    "key": "azure",
+    "name": {
+      "ua": "Ясно-лазуровий",
+      "en": "Azure"
+    },
+    "hex": "#F0FFFF",
+    "rgb": [
+      240,
+      255,
+      255
+    ],
+    "slug": "azure",
+    "group": "Білий",
+    "isActive": true
+  },
+  {
+    "key": "aliceblue",
+    "name": {
+      "ua": "Ціано-блакитний",
+      "en": "AliceBlue"
+    },
+    "hex": "#F0F8FF",
+    "rgb": [
+      240,
+      248,
+      255
+    ],
+    "slug": "aliceblue",
+    "group": "Білий",
+    "isActive": true
+  },
+  {
+    "key": "ghostwhite",
+    "name": {
+      "ua": "Примарний білий",
+      "en": "GhostWhite"
+    },
+    "hex": "#F8F8FF",
+    "rgb": [
+      248,
+      248,
+      255
+    ],
+    "slug": "ghostwhite",
+    "group": "Білий",
+    "isActive": true
+  },
+  {
+    "key": "whitesmoke",
+    "name": {
+      "ua": "Білий дим",
+      "en": "WhiteSmoke"
+    },
+    "hex": "#F5F5F5",
+    "rgb": [
+      245,
+      245,
+      245
+    ],
+    "slug": "whitesmoke",
+    "group": "Білий",
+    "isActive": true
+  },
+  {
+    "key": "seashell",
+    "name": {
+      "ua": "Колір морської раковини",
+      "en": "SeaShell"
+    },
+    "hex": "#FFF5EE",
+    "rgb": [
+      255,
+      245,
+      238
+    ],
+    "slug": "seashell",
+    "group": "Білий",
+    "isActive": true
+  },
+  {
+    "key": "beige",
+    "name": {
+      "ua": "Бежевий",
+      "en": "Beige"
+    },
+    "hex": "#F5F5DC",
+    "rgb": [
+      245,
+      245,
+      220
+    ],
+    "slug": "beige",
+    "group": "Білий",
+    "isActive": true
+  },
+  {
+    "key": "oldlace",
+    "name": {
+      "ua": "Старе мереживо",
+      "en": "OldLace"
+    },
+    "hex": "#FDF5E6",
+    "rgb": [
+      253,
+      245,
+      230
+    ],
+    "slug": "oldlace",
+    "group": "Білий",
+    "isActive": true
+  },
+  {
+    "key": "floralwhite",
+    "name": {
+      "ua": "Квітковий білий",
+      "en": "FloralWhite"
+    },
+    "hex": "#FFFAF0",
+    "rgb": [
+      255,
+      250,
+      240
+    ],
+    "slug": "floralwhite",
+    "group": "Білий",
+    "isActive": true
+  },
+  {
+    "key": "ivory",
+    "name": {
+      "ua": "Слонова кістка",
+      "en": "Ivory"
+    },
+    "hex": "#FFFFF0",
+    "rgb": [
+      255,
+      255,
+      240
+    ],
+    "slug": "ivory",
+    "group": "Білий",
+    "isActive": true
+  },
+  {
+    "key": "antiquewhite",
+    "name": {
+      "ua": "Античний білий",
+      "en": "AntiqueWhite"
+    },
+    "hex": "#FAEBD7",
+    "rgb": [
+      250,
+      235,
+      215
+    ],
+    "slug": "antiquewhite",
+    "group": "Білий",
+    "isActive": true
+  },
+  {
+    "key": "linen",
+    "name": {
+      "ua": "Лляний",
+      "en": "Linen"
+    },
+    "hex": "#FAF0E6",
+    "rgb": [
+      250,
+      240,
+      230
+    ],
+    "slug": "linen",
+    "group": "Білий",
+    "isActive": true
+  },
+  {
+    "key": "lavenderblush",
+    "name": {
+      "ua": "Блакитний з червоним відтінком",
+      "en": "LavenderBlush"
+    },
+    "hex": "#FFF0F5",
+    "rgb": [
+      255,
+      240,
+      245
+    ],
+    "slug": "lavenderblush",
+    "group": "Білий",
+    "isActive": true
+  },
+  {
+    "key": "mistyrose",
+    "name": {
+      "ua": "Тьмяно-рожевий",
+      "en": "MistyRose"
+    },
+    "hex": "#FFE4E1",
+    "rgb": [
+      255,
+      228,
+      225
+    ],
+    "slug": "mistyrose",
+    "group": "Білий",
+    "isActive": true
+  },
+  {
+    "key": "gainsboro",
+    "name": {
+      "ua": "Гейнсборо",
+      "en": "Gainsboro"
+    },
+    "hex": "#DCDCDC",
+    "rgb": [
+      220,
+      220,
+      220
+    ],
+    "slug": "gainsboro",
+    "group": "Чорний",
+    "isActive": true
+  },
+  {
+    "key": "lightgray",
+    "name": {
+      "ua": "Світлий сірий",
+      "en": "LightGray"
+    },
+    "hex": "#D3D3D3",
+    "rgb": [
+      211,
+      211,
+      211
+    ],
+    "slug": "lightgray",
+    "group": "Чорний",
+    "isActive": true
+  },
+  {
+    "key": "silver",
+    "name": {
+      "ua": "Срібний",
+      "en": "Silver"
+    },
+    "hex": "#C0C0C0",
+    "rgb": [
+      192,
+      192,
+      192
+    ],
+    "slug": "silver",
+    "group": "Чорний",
+    "isActive": true
+  },
+  {
+    "key": "darkgray",
+    "name": {
+      "ua": "Темно сірий",
+      "en": "DarkGray"
+    },
+    "hex": "#A9A9A9",
+    "rgb": [
+      169,
+      169,
+      169
+    ],
+    "slug": "darkgray",
+    "group": "Чорний",
+    "isActive": true
+  },
+  {
+    "key": "gray",
+    "name": {
+      "ua": "Сірий",
+      "en": "Gray"
+    },
+    "hex": "#808080",
+    "rgb": [
+      128,
+      128,
+      128
+    ],
+    "slug": "gray",
+    "group": "Чорний",
+    "isActive": true
+  },
+  {
+    "key": "dimgray",
+    "name": {
+      "ua": "Тьмяний сірий",
+      "en": "DimGray"
+    },
+    "hex": "#696969",
+    "rgb": [
+      105,
+      105,
+      105
+    ],
+    "slug": "dimgray",
+    "group": "Чорний",
+    "isActive": true
+  },
+  {
+    "key": "lightslategray",
+    "name": {
+      "ua": "Світлий аспідний сірий",
+      "en": "LightSlateGray"
+    },
+    "hex": "#778899",
+    "rgb": [
+      119,
+      136,
+      153
+    ],
+    "slug": "lightslategray",
+    "group": "Чорний",
+    "isActive": true
+  },
+  {
+    "key": "slategray",
+    "name": {
+      "ua": "Аспідний сірий",
+      "en": "SlateGray"
+    },
+    "hex": "#708090",
+    "rgb": [
+      112,
+      128,
+      144
+    ],
+    "slug": "slategray",
+    "group": "Чорний",
+    "isActive": true
+  },
+  {
+    "key": "darkslategray",
+    "name": {
+      "ua": "Темний аспідний сірий",
+      "en": "DarkSlateGray"
+    },
+    "hex": "#2F4F4F",
+    "rgb": [
+      47,
+      79,
+      79
+    ],
+    "slug": "darkslategray",
+    "group": "Чорний",
+    "isActive": true
+  },
+  {
+    "key": "black",
+    "name": {
+      "ua": "Чорний",
+      "en": "Black"
+    },
+    "hex": "#000000",
+    "rgb": [
+      0,
+      0,
+      0
+    ],
+    "slug": "black",
+    "group": "Чорний",
+    "isActive": true
+  }
+]

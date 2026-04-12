@@ -78,12 +78,45 @@ export const extractProductMaterialKeys = (productDoc = {}) => {
   return normalizeMaterialKeys(materialKeys);
 };
 
+const normalizeProductColors = (colors = []) =>
+  (Array.isArray(colors) ? colors : [])
+    .map((color) => ({
+      key: String(color?.key || "").trim(),
+      name: {
+        ua: String(color?.name?.ua || color?.name?.uk || color?.name?.en || "").trim(),
+        en: String(color?.name?.en || color?.name?.ua || color?.name?.uk || "").trim(),
+      },
+      hex: String(color?.hex || "").trim(),
+      rgb: Array.isArray(color?.rgb) ? color.rgb.map((component) => Number(component)) : [],
+      slug: color?.slug || null,
+      group: color?.group || null,
+      isActive: color?.isActive !== false,
+    }))
+    .filter((color) => color.key);
+
+const normalizeProductColorKeys = (productDoc = {}) => {
+  const rawKeys =
+    Array.isArray(productDoc?.colorKeys) && productDoc.colorKeys.length
+      ? productDoc.colorKeys
+      : normalizeProductColors(productDoc?.colors).map((color) => color.key);
+
+  return Array.from(
+    new Set(
+      rawKeys
+        .map((key) => String(key || "").trim())
+        .filter(Boolean)
+    )
+  );
+};
+
 export const normalizeProductCatalogPayload = (productDoc = {}) => ({
   ...productDoc,
   previewImage:
     (typeof productDoc?.previewImage === "string" && productDoc.previewImage.trim()) ||
     (Array.isArray(productDoc?.images) ? productDoc.images.find((item) => String(item || "").trim()) || "" : ""),
   modelUrl: typeof productDoc?.modelUrl === "string" ? productDoc.modelUrl : "",
+  colorKeys: normalizeProductColorKeys(productDoc),
+  colors: normalizeProductColors(productDoc?.colors),
   roomKeys: normalizeRoomKeys(productDoc?.roomKeys || []),
   materialKeys: extractProductMaterialKeys(productDoc),
 });

@@ -8,6 +8,7 @@ import {
   normalizeProductCatalogPayload,
   normalizeRoomKeys,
 } from "../services/catalogNormalizationService.js";
+import { attachColorReferencesToProducts } from "../services/productColorReferenceService.js";
 import {
   buildProductMutationPayload,
   createHttpError,
@@ -288,9 +289,10 @@ export const getProducts = async (req, res, next) => {
     ];
 
     const list = await Product.aggregate(pipeline);
+    const hydrated = await attachColorReferencesToProducts(list);
 
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");
-    res.json(list.map((item) => normalizeProductCatalogPayload(item)));
+    res.json(hydrated.map((item) => normalizeProductCatalogPayload(item)));
   } catch (err) {
     forwardControllerError(err, next, "getProducts", "Internal server error");
   }
@@ -394,10 +396,11 @@ export const getProductBySlug = async (req, res, next) => {
       throw createHttpError(400, "Slug is required");
     }
 
-    const product = await Product.findOne({ slug });
+    const product = await Product.findOne({ slug }).lean();
     if (!product) throw createHttpError(404, "Товар не знайдено");
 
-    res.json(normalizeProductCatalogPayload(product.toObject()));
+    const hydrated = await attachColorReferencesToProducts(product);
+    res.json(normalizeProductCatalogPayload(hydrated));
   } catch (err) {
     forwardControllerError(err, next, "getProductBySlug", "Помилка сервера");
   }
@@ -407,10 +410,11 @@ export const getProductById = async (req, res, next) => {
   try {
     ensureObjectId(req.params.id);
 
-    const product = await Product.findById(req.params.id);
+    const product = await Product.findById(req.params.id).lean();
     if (!product) throw createHttpError(404, "Товар не знайдено");
 
-    res.json(normalizeProductCatalogPayload(product.toObject()));
+    const hydrated = await attachColorReferencesToProducts(product);
+    res.json(normalizeProductCatalogPayload(hydrated));
   } catch (err) {
     forwardControllerError(err, next, "getProductById", "Помилка сервера");
   }
@@ -425,7 +429,8 @@ export const createProduct = async (req, res, next) => {
     });
 
     const product = await Product.create(payload);
-    res.status(201).json(normalizeProductCatalogPayload(product.toObject()));
+    const hydrated = await attachColorReferencesToProducts(product.toObject());
+    res.status(201).json(normalizeProductCatalogPayload(hydrated));
   } catch (err) {
     if (err?.code === 11000) {
       return next(createHttpError(409, "Product slug must be unique"));
@@ -455,7 +460,8 @@ export const updateProduct = async (req, res, next) => {
       { new: true, runValidators: true }
     );
 
-    res.json(normalizeProductCatalogPayload(updated.toObject()));
+    const hydrated = await attachColorReferencesToProducts(updated.toObject());
+    res.json(normalizeProductCatalogPayload(hydrated));
   } catch (err) {
     if (err?.code === 11000) {
       return next(createHttpError(409, "Product slug must be unique"));

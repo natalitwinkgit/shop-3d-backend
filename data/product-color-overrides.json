@@ -1,0 +1,119 @@
+[
+  {
+    "key": "sand",
+    "name": { "ua": "Пісочний", "en": "Sand" },
+    "hex": "#C2B280",
+    "rgb": [194, 178, 128],
+    "slug": "sand",
+    "group": "neutral",
+    "isActive": true
+  },
+  {
+    "key": "cream",
+    "name": { "ua": "Кремовий", "en": "Cream" },
+    "hex": "#FFFDD0",
+    "rgb": [255, 253, 208],
+    "slug": "cream",
+    "group": "neutral",
+    "isActive": true
+  },
+  {
+    "key": "stone",
+    "name": { "ua": "Кам'яний", "en": "Stone" },
+    "hex": "#B8B2A4",
+    "rgb": [184, 178, 164],
+    "slug": "stone",
+    "group": "neutral",
+    "isActive": true
+  },
+  {
+    "key": "graphite",
+    "name": { "ua": "Графітовий", "en": "Graphite" },
+    "hex": "#41424C",
+    "rgb": [65, 66, 76],
+    "slug": "graphite",
+    "group": "dark",
+    "isActive": true
+  },
+  {
+    "key": "oak",
+    "name": { "ua": "Дуб", "en": "Oak" },
+    "hex": "#C19A6B",
+    "rgb": [193, 154, 107],
+    "slug": "oak",
+    "group": "wood",
+    "isActive": true
+  },
+  {
+    "key": "walnut",
+    "name": { "ua": "Горіх", "en": "Walnut" },
+    "hex": "#5D3A1A",
+    "rgb": [93, 58, 26],
+    "slug": "walnut",
+    "group": "wood",
+    "isActive": true
+  },
+  {
+    "key": "travertine",
+    "name": { "ua": "Травертин", "en": "Travertine" },
+    "hex": "#D8C3A5",
+    "rgb": [216, 195, 165],
+    "slug": "travertine",
+    "group": "stone",
+    "isActive": true
+  },
+  {
+    "key": "smoke",
+    "name": { "ua": "Димчастий", "en": "Smoke" },
+    "hex": "#848884",
+    "rgb": [132, 136, 132],
+    "slug": "smoke",
+    "group": "neutral",
+    "isActive": true
+  },
+  {
+    "key": "ash",
+    "name": { "ua": "Попелястий", "en": "Ash" },
+    "hex": "#B2BEB5",
+    "rgb": [178, 190, 181],
+    "slug": "ash",
+    "group": "neutral",
+    "isActive": true
+  },
+  {
+    "key": "terracotta",
+    "name": { "ua": "Теракотовий", "en": "Terracotta" },
+    "hex": "#E2725B",
+    "rgb": [226, 114, 91],
+    "slug": "terracotta",
+    "group": "accent",
+    "isActive": true
+  },
+  {
+    "key": "latte",
+    "name": { "ua": "Лате", "en": "Latte" },
+    "hex": "#C5A582",
+    "rgb": [197, 165, 130],
+    "slug": "latte",
+    "group": "neutral",
+    "isActive": true
+  },
+  {
+    "key": "dusty-rose",
+    "name": { "ua": "Пильна троянда", "en": "Dusty Rose" },
+    "hex": "#DCAE96",
+    "rgb": [220, 174, 150],
+    "slug": "dusty-rose",
+    "group": "accent",
+    "isActive": true
+  },
+  {
+    "key": "taupe",
+    "name": { "ua": "Тауп", "en": "Taupe" },
+    "hex": "#8B8589",
+    "rgb": [139, 133, 137],
+    "slug": "taupe",
+    "group": "neutral",
+    "isActive": true
+  }
+]

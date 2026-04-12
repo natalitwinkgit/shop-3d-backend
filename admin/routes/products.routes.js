@@ -4,6 +4,7 @@ import { Router } from "express";
 import { getProductsStats } from "../../controllers/productController.js";
 import Product from "../../models/Product.js";
 import { normalizeProductCatalogPayload } from "../../services/catalogNormalizationService.js";
+import { attachColorReferencesToProducts } from "../../services/productColorReferenceService.js";
 import {
   buildProductMutationPayload,
   createHttpError,
@@ -15,7 +16,8 @@ const textOnlyMultipart = multer().none();
 router.get("/products", async (_req, res, next) => {
   try {
     const items = await Product.find({}).sort({ createdAt: -1 }).lean();
-    res.json(items.map((item) => normalizeProductCatalogPayload(item)));
+    const hydrated = await attachColorReferencesToProducts(items);
+    res.json(hydrated.map((item) => normalizeProductCatalogPayload(item)));
   } catch (error) {
     next(error);
   }
@@ -28,7 +30,8 @@ router.get("/products/:id", async (req, res, next) => {
     const product = await Product.findById(req.params.id).lean();
     if (!product) throw createHttpError(404, "Product not found");
 
-    res.json(normalizeProductCatalogPayload(product));
+    const hydrated = await attachColorReferencesToProducts(product);
+    res.json(normalizeProductCatalogPayload(hydrated));
   } catch (error) {
     if (error?.name === "CastError") {
       return next(createHttpError(400, "Product not found"));
@@ -47,7 +50,8 @@ router.post("/products", textOnlyMultipart, async (req, res, next) => {
     });
 
     const doc = await Product.create(payload);
-    res.status(201).json(normalizeProductCatalogPayload(doc.toObject()));
+    const hydrated = await attachColorReferencesToProducts(doc.toObject());
+    res.status(201).json(normalizeProductCatalogPayload(hydrated));
   } catch (error) {
     if (error?.code === 11000) {
       return next(createHttpError(409, "Product slug must be unique"));
@@ -75,7 +79,8 @@ const updateAdminProduct = async (req, res, next) => {
       { new: true, runValidators: true }
     );
 
-    res.json(normalizeProductCatalogPayload(saved.toObject()));
+    const hydrated = await attachColorReferencesToProducts(saved.toObject());
+    res.json(normalizeProductCatalogPayload(hydrated));
   } catch (error) {
     if (error?.name === "CastError") {
       return next(createHttpError(400, "Product not found"));

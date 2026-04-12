@@ -1,0 +1,260 @@
+[
+  {
+    "name": {
+      "ua": "Ліжко Luna Soft 180",
+      "en": "Luna Soft Bed 180"
+    },
+    "description": {
+      "ua": "М'яке двоспальне ліжко з високим узголів'ям для сучасної спальні.",
+      "en": "An upholstered double bed with a tall headboard for a modern bedroom."
+    },
+    "category": "beds",
+    "subCategory": "upholstered",
+    "price": 38999,
+    "discount": 8,
+    "status": "active",
+    "previewImage": "https://res.cloudinary.com/dauuk7ab8/image/upload/v1775844549/29ff9063-44c7-45a6-87be-fb585c9be6a1_qwf5gg.jpg",
+    "images": [
+      "https://res.cloudinary.com/dauuk7ab8/image/upload/v1775844549/29ff9063-44c7-45a6-87be-fb585c9be6a1_qwf5gg.jpg"
+    ],
+    "model3dUrl": "",
+    "styleKeys": ["modern", "soft"],
+    "colorKeys": ["beige", "ivory"],
+    "roomKeys": ["bedroom"],
+    "collectionKeys": ["luna-bedroom"],
+    "featureKeys": ["new_arrival", "made_in_ukraine"],
+    "specifications": {
+      "widthCm": 198,
+      "depthCm": 224,
+      "heightCm": 118,
+      "sleepingArea": "180x200",
+      "materialKey": "textile",
+      "manufacturerKey": "soft_form"
+    }
+  },
+  {
+    "name": {
+      "ua": "Диван Arco Straight Sand",
+      "en": "Arco Straight Sofa Sand"
+    },
+    "description": {
+      "ua": "Прямий тримісний диван для вітальні з м'якою комфортною посадкою.",
+      "en": "A straight three-seat sofa for the living room with soft everyday comfort."
+    },
+    "category": "sofas",
+    "subCategory": "straight",
+    "price": 32999,
+    "discount": 5,
+    "status": "active",
+    "previewImage": "https://res.cloudinary.com/dauuk7ab8/image/upload/v1775843114/fa42cfd7-ac0d-41c1-aa50-a614f4f25526_hsycrq.jpg",
+    "images": [
+      "https://res.cloudinary.com/dauuk7ab8/image/upload/v1775843114/fa42cfd7-ac0d-41c1-aa50-a614f4f25526_hsycrq.jpg"
+    ],
+    "model3dUrl": "",
+    "styleKeys": ["modern", "minimal"],
+    "colorKeys": ["sand", "cream"],
+    "roomKeys": ["living_room"],
+    "collectionKeys": ["arco-living"],
+    "featureKeys": ["best_seller", "easy_care"],
+    "specifications": {
+      "widthCm": 236,
+      "depthCm": 98,
+      "heightCm": 84,
+      "seats": 3,
+      "materialKey": "textile",
+      "manufacturerKey": "soft_form"
+    }
+  },
+  {
+    "name": {
+      "ua": "Крісло Teddy Lounge Cream",
+      "en": "Teddy Lounge Chair Cream"
+    },
+    "description": {
+      "ua": "Лаунж-крісло з глибокою посадкою для читання та зони відпочинку.",
+      "en": "A lounge armchair with a deep seat for reading corners and relaxed living."
+    },
+    "category": "armchairs",
+    "subCategory": "lounge",
+    "price": 15999,
+    "discount": 0,
+    "status": "active",
+    "previewImage": "https://res.cloudinary.com/dauuk7ab8/image/upload/v1775842814/c9579047-793e-4472-a59d-f96dcef3f2bb_qcxot8.jpg",
+    "images": [
+      "https://res.cloudinary.com/dauuk7ab8/image/upload/v1775842814/c9579047-793e-4472-a59d-f96dcef3f2bb_qcxot8.jpg"
+    ],
+    "model3dUrl": "",
+    "styleKeys": ["contemporary", "accent"],
+    "colorKeys": ["cream", "latte"],
+    "roomKeys": ["living_room", "bedroom"],
+    "collectionKeys": ["teddy-accent"],
+    "featureKeys": ["new_arrival"],
+    "specifications": {
+      "widthCm": 84,
+      "depthCm": 86,
+      "heightCm": 92,
+      "materialKey": "textile",
+      "manufacturerKey": "comfort_lab"
+    }
+  },
+  {
+    "name": {
+      "ua": "Стіл Nordic Dining 180",
+      "en": "Nordic Dining Table 180"
+    },
+    "description": {
+      "ua": "Обідній стіл для 6-8 персон з чистою геометрією і дерев'яною фактурою.",
+      "en": "A dining table for 6-8 people with clean geometry and a natural wood finish."
+    },
+    "category": "tables",
+    "subCategory": "dining",
+    "price": 21999,
+    "discount": 7,
+    "status": "active",
+    "previewImage": "https://res.cloudinary.com/dauuk7ab8/image/upload/v1775843382/1d2c177f-9f32-4f1f-bea3-3cbeea8af595_xfouyz.jpg",
+    "images": [
+      "https://res.cloudinary.com/dauuk7ab8/image/upload/v1775843382/1d2c177f-9f32-4f1f-bea3-3cbeea8af595_xfouyz.jpg"
+    ],
+    "model3dUrl": "",
+    "styleKeys": ["scandinavian", "minimal"],
+    "colorKeys": ["oak", "natural"],
+    "roomKeys": ["dining_room", "kitchen"],
+    "collectionKeys": ["nordic-dining"],
+    "featureKeys": ["made_in_ukraine"],
+    "specifications": {
+      "widthCm": 180,
+      "depthCm": 90,
+      "heightCm": 76,
+      "materialKey": "wood",
+      "manufacturerKey": "woodline"
+    }
+  },
+  {
+    "name": {
+      "ua": "Стілець Milo Soft Beige",
+      "en": "Milo Soft Chair Beige"
+    },
+    "description": {
+      "ua": "М'який стілець для кухні або їдальні з комфортною сучасною посадкою.",
+      "en": "A soft chair for kitchen or dining use with a comfortable modern seat."
+    },
+    "category": "chairs",
+    "subCategory": "soft",
+    "price": 5499,
+    "discount": 0,
+    "status": "active",
+    "previewImage": "https://res.cloudinary.com/dauuk7ab8/image/upload/v1775843382/1d2c177f-9f32-4f1f-bea3-3cbeea8af595_xfouyz.jpg",
+    "images": [
+      "https://res.cloudinary.com/dauuk7ab8/image/upload/v1775843382/1d2c177f-9f32-4f1f-bea3-3cbeea8af595_xfouyz.jpg"
+    ],
+    "model3dUrl": "",
+    "styleKeys": ["modern", "clean"],
+    "colorKeys": ["beige", "taupe"],
+    "roomKeys": ["kitchen", "dining_room"],
+    "collectionKeys": ["milo-dining"],
+    "featureKeys": ["easy_care"],
+    "specifications": {
+      "widthCm": 48,
+      "depthCm": 58,
+      "heightCm": 86,
+      "materialKey": "textile",
+      "manufacturerKey": "comfort_lab"
+    }
+  },
+  {
+    "name": {
+      "ua": "ТВ-тумба Frame 180 Graphite",
+      "en": "Frame TV Stand 180 Graphite"
+    },
+    "description": {
+      "ua": "ТВ-тумба з закритими секціями зберігання для сучасної вітальні.",
+      "en": "A TV stand with closed storage sections for a contemporary living room."
+    },
+    "category": "commodes",
+    "subCategory": "tv-stand",
+    "price": 14999,
+    "discount": 10,
+    "status": "active",
+    "previewImage": "https://res.cloudinary.com/dauuk7ab8/image/upload/v1775844979/332bd119-93bc-4aff-a1f1-fd5ecd6a624d_wifgjd.jpg",
+    "images": [
+      "https://res.cloudinary.com/dauuk7ab8/image/upload/v1775844979/332bd119-93bc-4aff-a1f1-fd5ecd6a624d_wifgjd.jpg"
+    ],
+    "model3dUrl": "",
+    "styleKeys": ["modern", "urban"],
+    "colorKeys": ["graphite", "oak"],
+    "roomKeys": ["living_room"],
+    "collectionKeys": ["frame-media"],
+    "featureKeys": ["storage_solution"],
+    "specifications": {
+      "widthCm": 180,
+      "depthCm": 42,
+      "heightCm": 54,
+      "materialKey": "wood",
+      "manufacturerKey": "woodline"
+    }
+  },
+  {
+    "name": {
+      "ua": "Шафа Mirror Slide 220",
+      "en": "Mirror Slide Wardrobe 220"
+    },
+    "description": {
+      "ua": "Шафа-купе з дзеркальним фасадом для спальні або передпокою.",
+      "en": "A sliding wardrobe with mirror fronts for a bedroom or hallway."
+    },
+    "category": "wardrobes",
+    "subCategory": "sliding",
+    "price": 28999,
+    "discount": 6,
+    "status": "active",
+    "previewImage": "https://res.cloudinary.com/dauuk7ab8/image/upload/v1775844549/29ff9063-44c7-45a6-87be-fb585c9be6a1_qwf5gg.jpg",
+    "images": [
+      "https://res.cloudinary.com/dauuk7ab8/image/upload/v1775844549/29ff9063-44c7-45a6-87be-fb585c9be6a1_qwf5gg.jpg"
+    ],
+    "model3dUrl": "",
+    "styleKeys": ["modern", "minimal"],
+    "colorKeys": ["oak", "mirror"],
+    "roomKeys": ["bedroom", "hallway"],
+    "collectionKeys": ["mirror-storage"],
+    "featureKeys": ["best_seller"],
+    "specifications": {
+      "widthCm": 220,
+      "depthCm": 62,
+      "heightCm": 240,
+      "materialKey": "wood",
+      "manufacturerKey": "woodline"
+    }
+  },
+  {
+    "name": {
+      "ua": "Стіл Core Work Desk 140",
+      "en": "Core Work Desk 140"
+    },
+    "description": {
+      "ua": "Письмовий стіл для домашнього офісу або робочого кабінету.",
+      "en": "A work desk for a home office or study space."
+    },
+    "category": "tables",
+    "subCategory": "desk",
+    "price": 12999,
+    "discount": 4,
+    "status": "active",
+    "previewImage": "https://res.cloudinary.com/dauuk7ab8/image/upload/v1775843382/1d2c177f-9f32-4f1f-bea3-3cbeea8af595_xfouyz.jpg",
+    "images": [
+      "https://res.cloudinary.com/dauuk7ab8/image/upload/v1775843382/1d2c177f-9f32-4f1f-bea3-3cbeea8af595_xfouyz.jpg"
+    ],
+    "model3dUrl": "",
+    "styleKeys": ["minimal", "office"],
+    "colorKeys": ["oak", "black"],
+    "roomKeys": ["home_office"],
+    "collectionKeys": ["core-office"],
+    "featureKeys": ["made_in_ukraine"],
+    "specifications": {
+      "widthCm": 140,
+      "depthCm": 70,
+      "heightCm": 76,
+      "materialKey": "wood",
+      "manufacturerKey": "woodline"
+    }
+  }
+]

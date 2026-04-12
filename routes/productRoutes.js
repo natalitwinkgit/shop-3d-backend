@@ -14,6 +14,7 @@ import {
   getProductsStats     // ✅ НОВЕ: з контролера
 } from "../controllers/productController.js";
 import { normalizeProductCatalogPayload } from "../services/catalogNormalizationService.js";
+import { attachColorReferencesToProducts } from "../services/productColorReferenceService.js";
 
 import { protect, admin } from "../middleware/authMiddleware.js";
 
@@ -47,9 +48,10 @@ router.get("/by-slug/:category/:subCategory/:slug", async (req, res) => {
       slug: String(slug || "").trim(),
       category: String(category || "").trim(),
       subCategory: String(subCategory || "").trim(),
-    });
+    }).lean();
     if (!product) return res.status(404).json({ message: "Product not found" });
-    res.json(normalizeProductCatalogPayload(product.toObject()));
+    const hydrated = await attachColorReferencesToProducts(product);
+    res.json(normalizeProductCatalogPayload(hydrated));
   } catch (e) {
     res.status(500).json({ message: "Server error" });
   }

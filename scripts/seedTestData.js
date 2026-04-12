@@ -16,6 +16,11 @@ import SubCategory from "../models/SubCategory.js";
 import Translation from "../models/Translation.js";
 import User, { ADMIN_ROLES } from "../models/userModel.js";
 import { syncUserCommerceData } from "../services/userProfileService.js";
+import {
+  buildColorLookup,
+  loadMergedProductColors,
+  pickProductColor,
+} from "./lib/productColorPalette.js";
 
 const SEED_TAG = "demo-test-v1";
 const SEED_PREFIX = "demo-";
@@ -388,6 +393,8 @@ const expandProductDefs = (defs = []) =>
   });
 
 const productDefs = expandProductDefs(baseProductDefs);
+const productColorPalette = loadMergedProductColors();
+const productColorLookup = buildColorLookup(productColorPalette);
 
 const locationDefs = [
   {
@@ -762,41 +769,49 @@ async function seedLocations() {
 }
 
 async function seedProducts() {
-  const docs = productDefs.map((product, index) => ({
-    name: { ua: product.nameUa, en: product.nameEn },
-    description: product.description,
-    slug: product.slug,
-    category: product.category,
-    subCategory: product.subCategory,
-    typeKey: `${product.category}:${product.subCategory}`,
-    images: product.images,
-    previewImage: product.images?.[0] || "",
-    modelUrl: buildCloudinaryModelUrl(product.slug),
-    styleKeys: product.styleKeys,
-    colorKeys: product.colorKeys,
-    roomKeys: product.roomKeys,
-    collectionKeys: product.collectionKeys,
-    featureKeys: product.featureKeys,
-    specifications: {
-      ...(product.specifications || {}),
-      materialKey: product.materialKeys?.[0] || "",
-      materialKeys: product.materialKeys || [],
-      materials: (product.materialKeys || []).map((key) => ({ key, label: key.replace(/_/g, " ") })),
-      manufacturerKey: product.manufacturerKey || "",
-      countryOfOrigin: "Ukraine",
-      warrantyMonths: 24,
-      leadTimeDays: product.specifications?.leadTimeDays || 5 + (index % 6),
-    },
-    price: product.price,
-    discount: product.discount,
-    inStock: true,
-    stockQty: 0,
-    status: "active",
-    ratingAvg: 0,
-    ratingCount: 0,
-    createdAt: daysAgo(160 - index * 4),
-    updatedAt: daysAgo(12 - (index % 8)),
-  }));
+  const docs = productDefs.map((product, index) => {
+    const resolvedColor = pickProductColor({
+      product,
+      palette: productColorPalette,
+      colorLookup: productColorLookup,
+    });
+
+    return {
+      name: { ua: product.nameUa, en: product.nameEn },
+      description: product.description,
+      slug: product.slug,
+      category: product.category,
+      subCategory: product.subCategory,
+      typeKey: `${product.category}:${product.subCategory}`,
+      images: product.images,
+      previewImage: product.images?.[0] || "",
+      modelUrl: buildCloudinaryModelUrl(product.slug),
+      styleKeys: product.styleKeys,
+      colorKeys: resolvedColor.colorKeys,
+      roomKeys: product.roomKeys,
+      collectionKeys: product.collectionKeys,
+      featureKeys: product.featureKeys,
+      specifications: {
+        ...(product.specifications || {}),
+        materialKey: product.materialKeys?.[0] || "",
+        materialKeys: product.materialKeys || [],
+        materials: (product.materialKeys || []).map((key) => ({ key, label: key.replace(/_/g, " ") })),
+        manufacturerKey: product.manufacturerKey || "",
+        countryOfOrigin: "Ukraine",
+        warrantyMonths: 24,
+        leadTimeDays: product.specifications?.leadTimeDays || 5 + (index % 6),
+      },
+      price: product.price,
+      discount: product.discount,
+      inStock: true,
+      stockQty: 0,
+      status: "active",
+      ratingAvg: 0,
+      ratingCount: 0,
+      createdAt: daysAgo(160 - index * 4),
+      updatedAt: daysAgo(12 - (index % 8)),
+    };
+  });
 
   return Product.insertMany(docs);
 }

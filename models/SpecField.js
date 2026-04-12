@@ -12,7 +12,7 @@ const SpecFieldSchema = new mongoose.Schema(
     kind: {
       type: String,
       required: true,
-      enum: ["text", "number", "bool", "dict", "chips_dict", "dimensions", "availability"],
+      enum: ["text", "number", "bool", "dict", "chips_dict", "dimensions", "availability", "color"],
     },
 
     // Куди зберігати/звідки читати в Product (dot-path або top-level)
