@@ -273,7 +273,7 @@ export const listFlatSubcategories = async (category) => {
   if (category) query.category = String(category);
 
   const parents = await Category.find(query)
-    .select("category names children")
+    .select("category names description children")
     .sort({ order: 1, createdAt: -1 })
     .lean();
 
@@ -283,8 +283,10 @@ export const listFlatSubcategories = async (category) => {
       rows.push({
         parentCategory: parent.category,
         parentNames: parent.names,
+        parentDescription: parent.description || { ua: "", en: "" },
         key: child.key,
         names: child.names,
+        description: child.description || { ua: "", en: "" },
         image: child.image || "",
         order: Number(child.order) || 0,
         id: `${parent.category}:${child.key}`,

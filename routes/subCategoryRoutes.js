@@ -17,7 +17,7 @@ router.get("/", async (req, res) => {
     if (category) q.category = String(category);
 
     const parents = await Category.find(q)
-      .select("category names children")
+      .select("category names description children")
       .sort({ order: 1, createdAt: -1 })
       .lean();
 
@@ -28,8 +28,10 @@ router.get("/", async (req, res) => {
         rows.push({
           parentCategory: p.category,
           parentNames: p.names,
+          parentDescription: p.description || { ua: "", en: "" },
           key: c.key,
           names: c.names,
+          description: c.description || { ua: "", en: "" },
           image: c.image || "",
           order: Number(c.order) || 0,
           // составной идентификатор для фронта:

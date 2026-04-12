@@ -7,6 +7,10 @@ const subCategorySchema = new mongoose.Schema(
       ua: { type: String, required: true },
       en: { type: String, required: true },
     },
+    description: {
+      ua: { type: String, default: "" },
+      en: { type: String, default: "" },
+    },
     image: { type: String, default: "" },
     order: { type: Number, default: 0 },
   },
@@ -19,6 +23,10 @@ const categorySchema = new mongoose.Schema(
     names: {
       ua: { type: String, required: true },
       en: { type: String, required: true },
+    },
+    description: {
+      ua: { type: String, default: "" },
+      en: { type: String, default: "" },
     },
     image: { type: String, default: "" },
     order: { type: Number, default: 0 },

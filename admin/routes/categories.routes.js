@@ -17,7 +17,7 @@ router.get("/categories", async (_req, res) => {
 router.get("/categories/:category/children", async (req, res) => {
   try {
     const doc = await Category.findOne({ category: req.params.category })
-      .select("category names image order children")
+      .select("category names description image order children")
       .lean();
 
     if (!doc) return res.status(404).json({ message: "Категорію не знайдено" });
@@ -26,6 +26,7 @@ router.get("/categories/:category/children", async (req, res) => {
       parent: {
         category: doc.category,
         names: doc.names,
+        description: doc.description || { ua: "", en: "" },
         image: doc.image,
         order: doc.order,
       },
@@ -39,7 +40,15 @@ router.get("/categories/:category/children", async (req, res) => {
 router.post("/categories/:category/children", async (req, res) => {
   try {
     const { category } = req.params;
-    const { key, name_ua, name_en, image = "", order = 0 } = req.body || {};
+    const {
+      key,
+      name_ua,
+      name_en,
+      description_ua = "",
+      description_en = "",
+      image = "",
+      order = 0,
+    } = req.body || {};
 
     if (!key || !name_ua || !name_en) {
       return res.status(400).json({ message: "key, name_ua, name_en - required" });
@@ -56,6 +65,7 @@ router.post("/categories/:category/children", async (req, res) => {
     doc.children.push({
       key,
       names: { ua: name_ua, en: name_en },
+      description: { ua: description_ua, en: description_en },
       image,
       order: Number(order) || 0,
     });
@@ -71,7 +81,7 @@ router.post("/categories/:category/children", async (req, res) => {
 router.put("/categories/:category/children/:key", async (req, res) => {
   try {
     const { category, key } = req.params;
-    const { name_ua, name_en, image, order } = req.body || {};
+    const { name_ua, name_en, description_ua, description_en, image, order } = req.body || {};
 
     const doc = await Category.findOne({ category });
     if (!doc) return res.status(404).json({ message: "Категорію не знайдено" });
@@ -83,6 +93,11 @@ router.put("/categories/:category/children/:key", async (req, res) => {
 
     if (name_ua) doc.children[index].names.ua = name_ua;
     if (name_en) doc.children[index].names.en = name_en;
+    if (!doc.children[index].description) {
+      doc.children[index].description = { ua: "", en: "" };
+    }
+    if (typeof description_ua === "string") doc.children[index].description.ua = description_ua;
+    if (typeof description_en === "string") doc.children[index].description.en = description_en;
     if (typeof image === "string") doc.children[index].image = image;
     if (order != null) doc.children[index].order = Number(order) || 0;
 
@@ -112,7 +127,15 @@ router.delete("/categories/:category/children/:key", async (req, res) => {
 
 router.post("/categories", adminUpload.single("image"), async (req, res) => {
   try {
-    const { category, name_ua, name_en, order, imageUrl } = req.body || {};
+    const {
+      category,
+      name_ua,
+      name_en,
+      description_ua = "",
+      description_en = "",
+      order,
+      imageUrl,
+    } = req.body || {};
     if (!category || !name_ua || !name_en) {
       return res.status(400).json({ message: "category + name_ua + name_en are required" });
     }
@@ -124,6 +147,7 @@ router.post("/categories", adminUpload.single("image"), async (req, res) => {
     const doc = await Category.create({
       category: String(category).trim(),
       names: { ua: String(name_ua || ""), en: String(name_en || "") },
+      description: { ua: String(description_ua || ""), en: String(description_en || "") },
       order: Number(order || 0),
       image,
       children: [],
@@ -141,10 +165,14 @@ router.put("/categories/:id", adminUpload.single("image"), async (req, res) => {
     const category = await Category.findById(req.params.id);
     if (!category) return res.status(404).json({ message: "Category not found" });
 
-    const { name_ua, name_en, order, imageUrl } = req.body || {};
+    const { name_ua, name_en, description_ua, description_en, order, imageUrl } = req.body || {};
     category.names = {
       ua: String(name_ua ?? category.names?.ua ?? ""),
       en: String(name_en ?? category.names?.en ?? ""),
+    };
+    category.description = {
+      ua: String(description_ua ?? category.description?.ua ?? ""),
+      en: String(description_en ?? category.description?.en ?? ""),
     };
     category.order = Number(order ?? category.order ?? 0);
 

@@ -13,6 +13,10 @@ const SubcategorySchema = new mongoose.Schema(
       ua: { type: String, default: "" },
       en: { type: String, default: "" },
     },
+    description: {
+      ua: { type: String, default: "" },
+      en: { type: String, default: "" },
+    },
 
     // порядок у списку (не обов’язково)
     sort: { type: Number, default: 0 },
