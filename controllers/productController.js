@@ -4,11 +4,22 @@ import Product from "../models/Product.js";
 import Inventory from "../models/Inventory.js";
 import {
   expandRoomQueryKeys,
+  normalizeCollectionKeys,
   normalizeMaterialKeys,
   normalizeProductCatalogPayload,
   normalizeRoomKeys,
+  normalizeStyleKeys,
 } from "../services/catalogNormalizationService.js";
 import { attachColorReferencesToProducts } from "../services/productColorReferenceService.js";
+import { attachProductInventoryAvailability } from "../services/productInventoryAvailabilityService.js";
+import {
+  attachProductAttributeReferencesToProducts,
+  resolveProductAttributeKeys,
+} from "../services/productAttributeReferenceService.js";
+import {
+  attachReferenceDictionariesToProducts,
+  resolveProductSpecificationReferences,
+} from "../services/productReferenceService.js";
 import {
   buildProductMutationPayload,
   createHttpError,
@@ -116,9 +127,9 @@ const buildProductCollectionFilter = (req) => {
   const typeKey = getQueryParam(req, "typeKey");
 
   const colorKeys = parseCsv(getQueryParam(req, "colorKeys"));
-  const styleKeys = parseCsv(getQueryParam(req, "styleKeys"));
+  const styleKeys = normalizeStyleKeys(parseCsv(getQueryParam(req, "styleKeys")) || []);
   const roomKeys = mergeCsvInputs(getQueryParam(req, "roomKeys"));
-  const collectionKeys = parseCsv(getQueryParam(req, "collectionKeys"));
+  const collectionKeys = normalizeCollectionKeys(parseCsv(getQueryParam(req, "collectionKeys")) || []);
 
   const materialKeys = mergeCsvInputs(
     getQueryParam(req, "materialKeys"),
@@ -142,8 +153,8 @@ const buildProductCollectionFilter = (req) => {
   if (!isEmpty(typeKey)) clauses.push({ typeKey: String(typeKey).trim() });
 
   if (colorKeys?.length) clauses.push({ colorKeys: { $in: colorKeys } });
-  if (styleKeys?.length) clauses.push({ styleKeys: { $in: styleKeys } });
-  if (collectionKeys?.length) clauses.push({ collectionKeys: { $in: collectionKeys } });
+  if (styleKeys.length) clauses.push({ styleKeys: { $in: styleKeys } });
+  if (collectionKeys.length) clauses.push({ collectionKeys: { $in: collectionKeys } });
   if (roomKeys?.length) clauses.push({ roomKeys: { $in: expandRoomQueryKeys(roomKeys) } });
 
   const materialFilter = buildMaterialFilter(materialKeys);
@@ -255,44 +266,22 @@ export const getProducts = async (req, res, next) => {
 
     const pipeline = [
       { $match: filter },
-
-      // ✅ FIX: inventories.product (бо в схемі Inventory поле "product")
-      {
-        $lookup: {
-          from: "inventories",
-          localField: "_id",
-          foreignField: "product",
-          as: "inv",
-        },
-      },
-
-      // totals (empty inv -> 0)
-      {
-        $addFields: {
-          onHandTotal: { $ifNull: [{ $sum: "$inv.onHand" }, 0] },
-          reservedTotal: { $ifNull: [{ $sum: "$inv.reserved" }, 0] },
-        },
-      },
-
-      {
-        $addFields: {
-          availableTotal: { $max: [0, { $subtract: ["$onHandTotal", "$reservedTotal"] }] },
-          hasStock: { $gt: [{ $subtract: ["$onHandTotal", "$reservedTotal"] }, 0] },
-        },
-      },
-
-      // ✅ фільтр по наявності
-      ...(hasStock !== undefined ? [{ $match: { hasStock: truthy(hasStock) } }] : []),
-
-      { $project: { inv: 0 } },
       { $sort: sortObj },
     ];
 
     const list = await Product.aggregate(pipeline);
-    const hydrated = await attachColorReferencesToProducts(list);
+    const hydrated = await attachProductAttributeReferencesToProducts(
+      await attachReferenceDictionariesToProducts(
+        await attachColorReferencesToProducts(list)
+      )
+    );
+    const withInventory = await attachProductInventoryAvailability(hydrated, { req });
+    const filtered = hasStock !== undefined
+      ? withInventory.filter((item) => item.hasStock === truthy(hasStock))
+      : withInventory;
 
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");
-    res.json(hydrated.map((item) => normalizeProductCatalogPayload(item)));
+    res.json(filtered.map((item) => normalizeProductCatalogPayload(item)));
   } catch (err) {
     forwardControllerError(err, next, "getProducts", "Internal server error");
   }
@@ -399,8 +388,16 @@ export const getProductBySlug = async (req, res, next) => {
     const product = await Product.findOne({ slug }).lean();
     if (!product) throw createHttpError(404, "Товар не знайдено");
 
-    const hydrated = await attachColorReferencesToProducts(product);
-    res.json(normalizeProductCatalogPayload(hydrated));
+    const hydrated = await attachProductAttributeReferencesToProducts(
+      await attachReferenceDictionariesToProducts(
+        await attachColorReferencesToProducts(product)
+      )
+    );
+    const withInventory = await attachProductInventoryAvailability(hydrated, {
+      req,
+      includeRows: true,
+    });
+    res.json(normalizeProductCatalogPayload(withInventory));
   } catch (err) {
     forwardControllerError(err, next, "getProductBySlug", "Помилка сервера");
   }
@@ -413,8 +410,16 @@ export const getProductById = async (req, res, next) => {
     const product = await Product.findById(req.params.id).lean();
     if (!product) throw createHttpError(404, "Товар не знайдено");
 
-    const hydrated = await attachColorReferencesToProducts(product);
-    res.json(normalizeProductCatalogPayload(hydrated));
+    const hydrated = await attachProductAttributeReferencesToProducts(
+      await attachReferenceDictionariesToProducts(
+        await attachColorReferencesToProducts(product)
+      )
+    );
+    const withInventory = await attachProductInventoryAvailability(hydrated, {
+      req,
+      includeRows: true,
+    });
+    res.json(normalizeProductCatalogPayload(withInventory));
   } catch (err) {
     forwardControllerError(err, next, "getProductById", "Помилка сервера");
   }
@@ -422,14 +427,23 @@ export const getProductById = async (req, res, next) => {
 
 export const createProduct = async (req, res, next) => {
   try {
-    const payload = buildProductMutationPayload({
-      body: req.body,
-      partial: false,
-      allowInventoryFields: false,
-    });
+    const payload = await resolveProductAttributeKeys(
+      await resolveProductSpecificationReferences(
+        buildProductMutationPayload({
+          body: req.body,
+          partial: false,
+          allowInventoryFields: false,
+        }),
+        { sourceBody: req.body }
+      )
+    );
 
     const product = await Product.create(payload);
-    const hydrated = await attachColorReferencesToProducts(product.toObject());
+    const hydrated = await attachProductAttributeReferencesToProducts(
+      await attachReferenceDictionariesToProducts(
+        await attachColorReferencesToProducts(product.toObject())
+      )
+    );
     res.status(201).json(normalizeProductCatalogPayload(hydrated));
   } catch (err) {
     if (err?.code === 11000) {
@@ -447,12 +461,17 @@ export const updateProduct = async (req, res, next) => {
     const product = await Product.findById(req.params.id);
     if (!product) throw createHttpError(404, "Не знайдено");
 
-    const updateData = buildProductMutationPayload({
-      body: req.body,
-      existingProduct: product.toObject(),
-      partial: true,
-      allowInventoryFields: false,
-    });
+    const updateData = await resolveProductAttributeKeys(
+      await resolveProductSpecificationReferences(
+        buildProductMutationPayload({
+          body: req.body,
+          existingProduct: product.toObject(),
+          partial: true,
+          allowInventoryFields: false,
+        }),
+        { sourceBody: req.body }
+      )
+    );
 
     const updated = await Product.findByIdAndUpdate(
       req.params.id,
@@ -460,7 +479,11 @@ export const updateProduct = async (req, res, next) => {
       { new: true, runValidators: true }
     );
 
-    const hydrated = await attachColorReferencesToProducts(updated.toObject());
+    const hydrated = await attachProductAttributeReferencesToProducts(
+      await attachReferenceDictionariesToProducts(
+        await attachColorReferencesToProducts(updated.toObject())
+      )
+    );
     res.json(normalizeProductCatalogPayload(hydrated));
   } catch (err) {
     if (err?.code === 11000) {

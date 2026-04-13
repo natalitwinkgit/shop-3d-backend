@@ -3,6 +3,11 @@
 Updated: 2026-03-27
 Purpose: short functional description of the current website and admin system, so this file can be used as context for planning the next CRM/CMS features.
 
+State model note:
+- This repository is backend-focused and does not implement a frontend centralized state store such as `Redux`.
+- Persistent business state lives in MongoDB and is accessed through backend routes and services.
+- Any frontend global store, if added in another repository, should mirror backend API data rather than replace it as a source of truth.
+
 ## 1. Public Storefront
 
 ### Authentication

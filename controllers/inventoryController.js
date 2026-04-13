@@ -1,6 +1,7 @@
 import Inventory from "../models/Inventory.js";
 import InventoryMovement from "../models/InventoryMovement.js";
 import Location from "../models/Location.js";
+import mongoose from "mongoose";
 import Product from "../models/Product.js";
 import {
   buildLocationPresentation,
@@ -18,10 +19,67 @@ const clamp0 = (n) => Math.max(0, toNum(n, 0));
 const pickStr = (value) => String(value || "").trim();
 
 const toBool = (value) => String(value) === "true" || String(value) === "1" || value === true;
+const isDuplicateKeyError = (error) =>
+  Number(error?.code) === 11000 || String(error?.message || error || "").includes("E11000");
+
+const legacyInventoryIdFields = new Set(["productId", "locationId"]);
+const getDuplicateKeyFields = (error) =>
+  Array.from(
+    new Set([
+      ...Object.keys(error?.keyPattern || {}),
+      ...Object.keys(error?.keyValue || {}),
+    ])
+  );
+
+const dropLegacyInventoryIndexesIfNeeded = async (error) => {
+  const duplicateFields = getDuplicateKeyFields(error);
+  if (!duplicateFields.some((field) => legacyInventoryIdFields.has(field))) {
+    return false;
+  }
+
+  try {
+    const indexes = await Inventory.collection.indexes();
+    const legacyIndexes = (indexes || []).filter((indexDef) => {
+      const indexFields = Object.keys(indexDef?.key || {});
+      return indexDef?.name !== "_id_" && indexFields.some((field) => legacyInventoryIdFields.has(field));
+    });
+
+    if (!legacyIndexes.length) return true;
+
+    for (const indexDef of legacyIndexes) {
+      if (!indexDef?.name) continue;
+      // eslint-disable-next-line no-await-in-loop
+      await Inventory.collection.dropIndex(indexDef.name);
+    }
+
+    return true;
+  } catch (dropError) {
+    const message = String(dropError?.message || "");
+    if (
+      dropError?.codeName === "IndexNotFound" ||
+      /index not found/i.test(message) ||
+      /ns not found/i.test(message)
+    ) {
+      return true;
+    }
+
+    throw dropError;
+  }
+};
 
 const isObjectIdLike = (value) => /^[a-f0-9]{24}$/i.test(String(value || ""));
+const assertObjectId = (value, fieldName) => {
+  if (!mongoose.Types.ObjectId.isValid(String(value || ""))) {
+    const error = new Error(`${fieldName} is invalid`);
+    error.statusCode = 400;
+    throw error;
+  }
+};
+
 const LOCATION_SELECT =
   "_id type city cityKey name nameKey address addressKey phone workingHours coordinates isActive";
+const PRODUCT_SELECT =
+  "_id name slug category status dimensions specifications";
 
 const getActorContext = (req) => ({
   actorId: String(req.user?._id || req.user?.id || ""),
@@ -30,6 +88,114 @@ const getActorContext = (req) => ({
 
 const presentLocation = (locationDoc, translations) =>
   buildLocationPresentation(locationDoc || {}, translations);
+
+const presentProduct = (productDoc) => {
+  if (!productDoc) return null;
+
+  return {
+    id: String(productDoc._id || ""),
+    name: productDoc.name || { ua: "", en: "" },
+    slug: pickStr(productDoc.slug),
+    category: pickStr(productDoc.category),
+    status: pickStr(productDoc.status),
+    dimensions:
+      productDoc.dimensions && typeof productDoc.dimensions === "object"
+        ? productDoc.dimensions
+        : {},
+    specifications:
+      productDoc.specifications && typeof productDoc.specifications === "object"
+        ? productDoc.specifications
+        : {},
+  };
+};
+
+const matchesInventoryFilters = (item, req) => {
+  const city = pickStr(req.query.city).toLowerCase();
+  const cityKey = pickStr(req.query.cityKey).toLowerCase();
+  const type = pickStr(req.query.type).toLowerCase();
+  const locationId = pickStr(req.query.locationId);
+  const showcase = req.query.showcase;
+
+  if (city && pickStr(item.location?.city).toLowerCase() !== city) return false;
+  if (cityKey && pickStr(item.location?.cityKey).toLowerCase() !== cityKey) return false;
+  if (type && pickStr(item.location?.type).toLowerCase() !== type) return false;
+  if (locationId && String(item.location?._id || "") !== locationId) return false;
+  if (showcase !== undefined && !!item.isShowcase !== toBool(showcase)) return false;
+
+  return true;
+};
+
+const buildInventoryFacets = (items = []) => {
+  const cityMap = new Map();
+  const typeMap = new Map();
+  const locationMap = new Map();
+
+  items.forEach((item) => {
+    const location = item.location || {};
+    const cityKey = pickStr(location.cityKey) || pickStr(location.city);
+    const cityLabel = pickStr(location.cityLabel) || pickStr(location.city);
+    const type = pickStr(location.type);
+    const locationId = String(location.id || location._id || "");
+
+    if (cityKey) {
+      const existingCity = cityMap.get(cityKey) || {
+        city: pickStr(location.city),
+        cityKey,
+        cityLabel,
+        count: 0,
+      };
+      existingCity.count += 1;
+      cityMap.set(cityKey, existingCity);
+    }
+
+    if (type) {
+      const existingType = typeMap.get(type) || { type, count: 0 };
+      existingType.count += 1;
+      typeMap.set(type, existingType);
+    }
+
+    if (locationId) {
+      locationMap.set(locationId, {
+        id: locationId,
+        city: pickStr(location.city),
+        cityKey: pickStr(location.cityKey),
+        cityLabel: cityLabel,
+        type,
+        name: pickStr(location.name),
+        address: pickStr(location.address),
+        isActive: location.isActive ?? true,
+      });
+    }
+  });
+
+  return {
+    cities: Array.from(cityMap.values()).sort((left, right) =>
+      String(left.cityLabel).localeCompare(String(right.cityLabel), "uk")
+    ),
+    types: Array.from(typeMap.values()).sort((left, right) =>
+      String(left.type).localeCompare(String(right.type), "uk")
+    ),
+    locations: Array.from(locationMap.values()).sort((left, right) =>
+      `${left.cityLabel} ${left.type} ${left.name}`.localeCompare(
+        `${right.cityLabel} ${right.type} ${right.name}`,
+        "uk"
+      )
+    ),
+  };
+};
+
+const buildInventorySummary = (items = []) =>
+  items.reduce(
+    (acc, item) => {
+      acc.rows += 1;
+      acc.onHand += item.onHand;
+      acc.reserved += item.reserved;
+      acc.available += item.available;
+      if (item.isShowcase) acc.showcaseRows += 1;
+      return acc;
+    },
+    { rows: 0, onHand: 0, reserved: 0, available: 0, showcaseRows: 0 }
+  );
 
 const formatInventoryRow = (doc, translations) => {
   const onHand = clamp0(doc.onHand);
@@ -114,16 +280,31 @@ const formatMovement = (doc, translations) => {
 const loadInventoryTranslations = async (req) =>
   loadLocationTranslations(resolveLocationLang(req));
 
-const normalizeInventoryPayload = (body = {}) => ({
-  onHand: clamp0(body.onHand),
-  reserved: clamp0(body.reserved),
-  zone: pickStr(body.zone),
+export const normalizeInventoryPayload = (body = {}) => ({
+  onHand: clamp0(body.onHand ?? body.quantity ?? body.qty ?? body.locationQty),
+  reserved: clamp0(body.reserved ?? body.reservedQty),
+  zone: pickStr(body.zone ?? body.storageZone),
   note: pickStr(body.note),
-  isShowcase: toBool(body.isShowcase),
+  isShowcase: toBool(body.isShowcase ?? body.showcase),
   reason: pickStr(body.reason),
 });
 
+const inventoryRowMatches = (row = {}, updateData = {}) =>
+  clamp0(row.onHand) === clamp0(updateData.onHand) &&
+  clamp0(row.reserved) === clamp0(updateData.reserved) &&
+  pickStr(row.zone) === pickStr(updateData.zone) &&
+  pickStr(row.note) === pickStr(updateData.note) &&
+  !!row.isShowcase === !!updateData.isShowcase;
+
+const withInventoryPopulate = (query) =>
+  query
+    .populate("product", "name slug category status")
+    .populate("location", LOCATION_SELECT);
+
 const ensureProductAndLocation = async ({ productId, locationId }) => {
+  assertObjectId(productId, "productId");
+  assertObjectId(locationId, "locationId");
+
   const [product, location] = await Promise.all([
     Product.findById(productId).select("_id name slug category status").lean(),
     Location.findById(locationId).select(LOCATION_SELECT).lean(),
@@ -148,21 +329,162 @@ const logInventoryMovement = async (payload) => {
   await InventoryMovement.create(payload);
 };
 
+export const buildProductInventoryView = async ({
+  productId,
+  req,
+  extendedView = false,
+} = {}) => {
+  assertObjectId(productId, "productId");
+
+  const items = await Inventory.find({ product: productId })
+    .populate("product", PRODUCT_SELECT)
+    .populate("location", LOCATION_SELECT)
+    .sort({ isShowcase: -1, updatedAt: -1 })
+    .lean();
+
+  const translations = await loadInventoryTranslations(req);
+  const filteredItems = items.filter((item) => matchesInventoryFilters(item, req));
+  const formattedItems = filteredItems.map((item) => formatInventoryRow(item, translations));
+
+  if (!extendedView) {
+    return formattedItems;
+  }
+
+  const fallbackProduct =
+    items[0]?.product || (await Product.findById(productId).select(PRODUCT_SELECT).lean());
+  const product = presentProduct(fallbackProduct);
+
+  if (!product) {
+    const error = new Error("Product not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  return {
+    product,
+    filters: {
+      city: pickStr(req?.query?.city),
+      cityKey: pickStr(req?.query?.cityKey),
+      type: pickStr(req?.query?.type),
+      locationId: pickStr(req?.query?.locationId),
+      showcase: req?.query?.showcase === undefined ? null : toBool(req.query.showcase),
+    },
+    facets: buildInventoryFacets(formattedItems),
+    summary: buildInventorySummary(formattedItems),
+    items: formattedItems,
+  };
+};
+
+export const upsertInventoryRow = async ({
+  productId,
+  locationId,
+  body = {},
+  actor = null,
+} = {}) => {
+  if (!productId || !locationId) {
+    const error = new Error("productId and locationId are required");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  await ensureProductAndLocation({ productId, locationId });
+
+  const payload = normalizeInventoryPayload(body);
+  if (payload.reserved > payload.onHand) {
+    const error = new Error("reserved cannot be greater than onHand");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const filter = { product: productId, location: locationId };
+  const updateData = {
+    onHand: payload.onHand,
+    reserved: payload.reserved,
+    zone: payload.zone,
+    note: payload.note,
+    isShowcase: payload.isShowcase,
+  };
+
+  let previous = await Inventory.findOne(filter).lean();
+  let doc = null;
+
+  try {
+    doc = await withInventoryPopulate(
+      Inventory.findOneAndUpdate(filter, { $set: updateData }, { new: true, upsert: true })
+    ).lean();
+  } catch (error) {
+    if (!isDuplicateKeyError(error)) throw error;
+
+    let duplicateError = error;
+    const recoveredFromLegacyIndex = await dropLegacyInventoryIndexesIfNeeded(error);
+    if (recoveredFromLegacyIndex) {
+      try {
+        doc = await withInventoryPopulate(
+          Inventory.findOneAndUpdate(filter, { $set: updateData }, { new: true, upsert: true })
+        ).lean();
+      } catch (retryError) {
+        if (!isDuplicateKeyError(retryError)) throw retryError;
+        duplicateError = retryError;
+      }
+    }
+
+    if (!doc) {
+      previous = await Inventory.findOne(filter).lean();
+      if (!previous) throw duplicateError;
+
+      if (inventoryRowMatches(previous, updateData)) {
+        doc = await withInventoryPopulate(Inventory.findById(previous._id)).lean();
+      } else {
+        doc = await withInventoryPopulate(
+          Inventory.findOneAndUpdate(filter, { $set: updateData }, { new: true, upsert: false })
+        ).lean();
+      }
+    }
+  }
+
+  if (!doc) {
+    const error = new Error("Inventory row was not saved");
+    error.statusCode = 500;
+    throw error;
+  }
+
+  const changed = !previous || !inventoryRowMatches(previous, updateData);
+  if (changed && actor) {
+    await logInventoryMovement({
+      type: "upsert",
+      product: productId,
+      location: locationId,
+      deltaOnHand: payload.onHand - clamp0(previous?.onHand),
+      deltaReserved: payload.reserved - clamp0(previous?.reserved),
+      previousOnHand: clamp0(previous?.onHand),
+      nextOnHand: payload.onHand,
+      previousReserved: clamp0(previous?.reserved),
+      nextReserved: payload.reserved,
+      quantity: payload.onHand - clamp0(previous?.onHand),
+      zone: payload.zone,
+      note: payload.note,
+      isShowcase: payload.isShowcase,
+      actorId: pickStr(actor?.actorId),
+      actorName: pickStr(actor?.actorName) || "Admin",
+      reason: payload.reason,
+    });
+  }
+
+  return { doc, payload, previous, changed };
+};
+
 // GET /api/inventory/product/:productId
 export async function getByProduct(req, res) {
   try {
     const { productId } = req.params;
-
-    const items = await Inventory.find({ product: productId })
-      .populate("product", "name slug category status")
-      .populate("location", LOCATION_SELECT)
-      .sort({ isShowcase: -1, updatedAt: -1 })
-      .lean();
-
-    const translations = await loadInventoryTranslations(req);
-    return res.json(items.map((item) => formatInventoryRow(item, translations)));
+    const extendedView = ["1", "true", "full"].includes(String(req.query.view || "").toLowerCase());
+    return res.json(
+      await buildProductInventoryView({ productId, req, extendedView })
+    );
   } catch (e) {
-    return res.status(500).json({ message: "Inventory load failed", error: String(e?.message || e) });
+    return res
+      .status(e.statusCode || 500)
+      .json({ message: "Inventory load failed", error: String(e?.message || e) });
   }
 }
 
@@ -170,6 +492,7 @@ export async function getByProduct(req, res) {
 export async function getByLocation(req, res) {
   try {
     const { locationId } = req.params;
+    assertObjectId(locationId, "locationId");
     const items = await Inventory.find({ location: locationId })
       .populate("product", "name slug category status")
       .populate("location", LOCATION_SELECT)
@@ -273,62 +596,71 @@ export async function getOverview(req, res) {
 export async function upsert(req, res) {
   try {
     const { productId, locationId } = req.body;
-
-    if (!productId || !locationId) {
-      return res.status(400).json({ message: "productId and locationId are required" });
-    }
-
-    await ensureProductAndLocation({ productId, locationId });
-
-    const payload = normalizeInventoryPayload(req.body);
-    if (payload.reserved > payload.onHand) {
-      return res.status(400).json({ message: "reserved cannot be greater than onHand" });
-    }
-
-    const existing = await Inventory.findOne({ product: productId, location: locationId }).lean();
-
-    const updateData = {
-      onHand: payload.onHand,
-      reserved: payload.reserved,
-      zone: payload.zone,
-      note: payload.note,
-      isShowcase: payload.isShowcase,
-    };
-
-    const doc = await Inventory.findOneAndUpdate(
-      { product: productId, location: locationId },
-      { $set: updateData },
-      { new: true, upsert: true }
-    )
-      .populate("product", "name slug category status")
-      .populate("location", LOCATION_SELECT)
-      .lean();
-
-    await logInventoryMovement({
-      type: "upsert",
-      product: productId,
-      location: locationId,
-      deltaOnHand: payload.onHand - clamp0(existing?.onHand),
-      deltaReserved: payload.reserved - clamp0(existing?.reserved),
-      previousOnHand: clamp0(existing?.onHand),
-      nextOnHand: payload.onHand,
-      previousReserved: clamp0(existing?.reserved),
-      nextReserved: payload.reserved,
-      quantity: payload.onHand - clamp0(existing?.onHand),
-      zone: payload.zone,
-      note: payload.note,
-      isShowcase: payload.isShowcase,
-      ...getActorContext(req),
-      reason: payload.reason,
+    assertObjectId(productId, "productId");
+    assertObjectId(locationId, "locationId");
+    const { doc } = await upsertInventoryRow({
+      productId,
+      locationId,
+      body: req.body,
+      actor: getActorContext(req),
     });
 
     const translations = await loadInventoryTranslations(req);
     return res.json(formatInventoryRow(doc, translations));
   } catch (e) {
-    if (String(e).includes("E11000")) {
-      return res.status(409).json({ message: "Duplicate inventory row (product+location)" });
+    const statusCode = e?.statusCode || 500;
+    const message =
+      statusCode >= 500
+        ? "Inventory upsert failed"
+        : String(e?.message || "Inventory upsert failed");
+    return res.status(statusCode).json({ message, error: String(e?.message || e) });
+  }
+}
+
+// DELETE /api/inventory/:id
+export async function remove(req, res) {
+  try {
+    const id = pickStr(req.params.id);
+    if (!isObjectIdLike(id)) {
+      return res.status(400).json({ message: "Invalid inventory id" });
     }
-    return res.status(e.statusCode || 500).json({ message: "Upsert failed", error: String(e?.message || e) });
+
+    const existing = await Inventory.findById(id)
+      .populate("product", PRODUCT_SELECT)
+      .populate("location", LOCATION_SELECT)
+      .lean();
+
+    if (!existing) {
+      return res.status(404).json({ message: "Inventory row not found" });
+    }
+
+    await Inventory.findByIdAndDelete(id);
+
+    await logInventoryMovement({
+      type: "delete",
+      product: existing.product?._id || existing.product,
+      location: existing.location?._id || existing.location,
+      deltaOnHand: -clamp0(existing.onHand),
+      deltaReserved: -clamp0(existing.reserved),
+      previousOnHand: clamp0(existing.onHand),
+      nextOnHand: 0,
+      previousReserved: clamp0(existing.reserved),
+      nextReserved: 0,
+      quantity: clamp0(existing.onHand),
+      zone: pickStr(existing.zone),
+      note: pickStr(existing.note),
+      isShowcase: !!existing.isShowcase,
+      ...getActorContext(req),
+      reason: pickStr(req.body?.reason || req.query?.reason),
+    });
+
+    const translations = await loadInventoryTranslations(req);
+    return res.json({
+      ok: true,
+      removed: formatInventoryRow(existing, translations),
+    });
+  } catch (e) {
+    return res.status(e.statusCode || 500).json({ message: "Delete failed", error: String(e?.message || e) });
   }
 }
 

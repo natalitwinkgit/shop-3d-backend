@@ -1,6 +1,8 @@
 // server/controllers/authController.js
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { ERROR_CODES } from "../app/constants/errorCodes.js";
+import { logger } from "../app/lib/logger.js";
 import User, {
   getStoredPasswordHash,
   isValidPhone,
@@ -17,6 +19,8 @@ const signToken = (userId) =>
 const pickStr = (value) => String(value || "").trim();
 
 const normalizeEmail = (value) => pickStr(value).toLowerCase();
+const sendError = (res, statusCode, code, message) =>
+  res.status(statusCode).json({ code, message });
 
 export const registerUser = async (req, res) => {
   const name = pickStr(req.body?.name);
@@ -26,23 +30,29 @@ export const registerUser = async (req, res) => {
   const confirmPassword = String(req.body?.confirmPassword || "");
 
   if (!name || !email || !phone || !password) {
-    return res.status(400).json({
-      message: "name, email, phone and password are required",
-    });
+    return sendError(
+      res,
+      400,
+      ERROR_CODES.BAD_REQUEST,
+      "name, email, phone and password are required"
+    );
   }
 
   if (password.length < 6) {
-    return res
-      .status(400)
-      .json({ message: "Password must contain at least 6 characters" });
+    return sendError(
+      res,
+      400,
+      ERROR_CODES.BAD_REQUEST,
+      "Password must contain at least 6 characters"
+    );
   }
 
   if (confirmPassword && password !== confirmPassword) {
-    return res.status(400).json({ message: "Passwords do not match" });
+    return sendError(res, 400, ERROR_CODES.BAD_REQUEST, "Passwords do not match");
   }
 
   if (!isValidPhone(phone)) {
-    return res.status(400).json({ message: "Invalid phone number" });
+    return sendError(res, 400, ERROR_CODES.BAD_REQUEST, "Invalid phone number");
   }
 
   try {
@@ -51,9 +61,12 @@ export const registerUser = async (req, res) => {
     }).lean();
 
     if (existing) {
-      return res.status(409).json({
-        message: "User with this email or phone already exists",
-      });
+      return sendError(
+        res,
+        409,
+        ERROR_CODES.REQUEST_ERROR,
+        "User with this email or phone already exists"
+      );
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
@@ -76,8 +89,8 @@ export const registerUser = async (req, res) => {
       user: buildPublicUserResponse(user),
     });
   } catch (error) {
-    console.error("[AUTH register]", error);
-    return res.status(500).json({ message: "Server error" });
+    logger.error("AUTH register failed", {}, error);
+    return sendError(res, 500, ERROR_CODES.SERVER_ERROR, "Server error");
   }
 };
 
@@ -86,27 +99,27 @@ export const loginUser = async (req, res) => {
   const password = String(req.body?.password || "");
 
   if (!email || !password) {
-    return res.status(400).json({ message: "email and password are required" });
+    return sendError(res, 400, ERROR_CODES.BAD_REQUEST, "email and password are required");
   }
 
   try {
     const user = await User.findOne({ email }).select("+passwordHash +password");
     if (!user) {
-      return res.status(400).json({ message: "Invalid credentials" });
+      return sendError(res, 400, ERROR_CODES.REQUEST_ERROR, "Invalid credentials");
     }
 
     if (user.status === "banned") {
-      return res.status(403).json({ message: "Your account is banned" });
+      return sendError(res, 403, ERROR_CODES.FORBIDDEN, "Your account is banned");
     }
 
     const storedHash = getStoredPasswordHash(user);
     if (!storedHash) {
-      return res.status(400).json({ message: "Invalid credentials" });
+      return sendError(res, 400, ERROR_CODES.REQUEST_ERROR, "Invalid credentials");
     }
 
     const isMatch = await bcrypt.compare(password, storedHash);
     if (!isMatch) {
-      return res.status(400).json({ message: "Invalid credentials" });
+      return sendError(res, 400, ERROR_CODES.REQUEST_ERROR, "Invalid credentials");
     }
 
     const now = new Date();
@@ -135,44 +148,44 @@ export const loginUser = async (req, res) => {
       user: buildPublicUserResponse(freshUser),
     });
   } catch (error) {
-    console.error("[AUTH login]", error);
-    return res.status(500).json({ message: "Server error" });
+    logger.error("AUTH login failed", {}, error);
+    return sendError(res, 500, ERROR_CODES.SERVER_ERROR, "Server error");
   }
 };
 
 export const getMe = async (req, res) => {
   try {
     if (!req.user || !req.user.id) {
-      return res.status(401).json({ message: "Unauthorized" });
+      return sendError(res, 401, ERROR_CODES.UNAUTHORIZED, "Unauthorized");
     }
 
     const user = await User.findById(req.user.id).select("-passwordHash -password");
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      return sendError(res, 404, ERROR_CODES.NOT_FOUND, "User not found");
     }
 
     if (user.status === "banned") {
-      return res.status(403).json({ message: "Your account is banned" });
+      return sendError(res, 403, ERROR_CODES.FORBIDDEN, "Your account is banned");
     }
 
     return res.status(200).json({
       user: buildPublicUserResponse(user),
     });
   } catch (error) {
-    console.error("[AUTH me]", error);
-    return res.status(500).json({ message: "Server error" });
+    logger.error("AUTH me failed", {}, error);
+    return sendError(res, 500, ERROR_CODES.SERVER_ERROR, "Server error");
   }
 };
 
 export const updateMe = async (req, res) => {
   try {
     if (!req.user || !req.user.id) {
-      return res.status(401).json({ message: "Unauthorized" });
+      return sendError(res, 401, ERROR_CODES.UNAUTHORIZED, "Unauthorized");
     }
 
     const user = await User.findById(req.user.id).select("-passwordHash -password");
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      return sendError(res, 404, ERROR_CODES.NOT_FOUND, "User not found");
     }
 
     if (req.body?.name !== undefined) {
@@ -186,7 +199,7 @@ export const updateMe = async (req, res) => {
     if (req.body?.phone !== undefined) {
       const phone = normalizePhone(req.body.phone);
       if (!isValidPhone(phone)) {
-        return res.status(400).json({ message: "Invalid phone number" });
+        return sendError(res, 400, ERROR_CODES.BAD_REQUEST, "Invalid phone number");
       }
 
       const existing = await User.findOne({
@@ -195,9 +208,12 @@ export const updateMe = async (req, res) => {
       }).lean();
 
       if (existing) {
-        return res.status(409).json({
-          message: "User with this phone already exists",
-        });
+        return sendError(
+          res,
+          409,
+          ERROR_CODES.REQUEST_ERROR,
+          "User with this phone already exists"
+        );
       }
 
       user.phone = phone;
@@ -211,8 +227,8 @@ export const updateMe = async (req, res) => {
       user: buildPublicUserResponse(user),
     });
   } catch (error) {
-    console.error("[AUTH updateMe]", error);
-    return res.status(500).json({ message: "Server error" });
+    logger.error("AUTH updateMe failed", {}, error);
+    return sendError(res, 500, ERROR_CODES.SERVER_ERROR, "Server error");
   }
 };
 
@@ -222,12 +238,12 @@ export const toggleLike = async (req, res) => {
   const targetId = productId || req.body._id || req.body.id;
 
   if (!targetId) {
-    return res.status(400).json({ message: "productId is required" });
+    return sendError(res, 400, ERROR_CODES.BAD_REQUEST, "productId is required");
   }
 
   try {
     const user = await User.findById(req.user.id);
-    if (!user) return res.status(404).json({ message: "User not found" });
+    if (!user) return sendError(res, 404, ERROR_CODES.NOT_FOUND, "User not found");
 
     const index = user.likes.findIndex(
       (like) => String(like.productId) === String(targetId)
@@ -252,15 +268,15 @@ export const toggleLike = async (req, res) => {
     );
     return res.status(200).json(buildPublicUserResponse(updatedUser));
   } catch (error) {
-    console.error("[AUTH toggleLike]", error);
-    return res.status(500).json({ message: "Server error" });
+    logger.error("AUTH toggleLike failed", {}, error);
+    return sendError(res, 500, ERROR_CODES.SERVER_ERROR, "Server error");
   }
 };
 
 export const forgotPassword = async (req, res) => {
   const email = normalizeEmail(req.body?.email);
   if (!email) {
-    return res.status(400).json({ message: "Email is required" });
+    return sendError(res, 400, ERROR_CODES.BAD_REQUEST, "Email is required");
   }
 
   try {
@@ -269,7 +285,7 @@ export const forgotPassword = async (req, res) => {
       message: "If the account exists, reset instructions will be sent",
     });
   } catch (error) {
-    return res.status(500).json({ message: "Server error" });
+    return sendError(res, 500, ERROR_CODES.SERVER_ERROR, "Server error");
   }
 };
 
@@ -280,7 +296,7 @@ export const resetPassword = async (_req, res) => {
 export const logoutUser = async (req, res) => {
   try {
     if (!req.user || !req.user.id) {
-      return res.status(401).json({ message: "Unauthorized" });
+      return sendError(res, 401, ERROR_CODES.UNAUTHORIZED, "Unauthorized");
     }
 
     const user = await markUserOffline(req.user.id, {
@@ -288,14 +304,14 @@ export const logoutUser = async (req, res) => {
       source: "logout",
     });
 
-    if (!user) return res.status(404).json({ message: "User not found" });
+    if (!user) return sendError(res, 404, ERROR_CODES.NOT_FOUND, "User not found");
 
     return res.status(200).json({
       ok: true,
       user: buildPublicUserResponse(user),
     });
   } catch (error) {
-    console.error("[AUTH logout]", error);
-    return res.status(500).json({ message: "Server error" });
+    logger.error("AUTH logout failed", {}, error);
+    return sendError(res, 500, ERROR_CODES.SERVER_ERROR, "Server error");
   }
 };

@@ -23,10 +23,24 @@
     "roomKeys": ["bedroom"],
     "collectionKeys": ["luna-bedroom"],
     "featureKeys": ["new_arrival", "made_in_ukraine"],
-    "specifications": {
+    "dimensions": {
       "widthCm": 198,
       "depthCm": 224,
-      "heightCm": 118,
+      "lengthCm": 224,
+      "heightCm": 118
+    },
+    "inventoryRows": [
+      {
+        "locationId": "replace_with_location_id",
+        "onHand": 1,
+        "reserved": 0,
+        "zone": "Showroom Hall A",
+        "note": "Перший виставковий екземпляр",
+        "isShowcase": true,
+        "reason": "Initial stock"
+      }
+    ],
+    "specifications": {
       "sleepingArea": "180x200",
       "materialKey": "textile",
       "manufacturerKey": "soft_form"
@@ -56,10 +70,13 @@
     "roomKeys": ["living_room"],
     "collectionKeys": ["arco-living"],
     "featureKeys": ["best_seller", "easy_care"],
-    "specifications": {
+    "dimensions": {
       "widthCm": 236,
       "depthCm": 98,
-      "heightCm": 84,
+      "lengthCm": 98,
+      "heightCm": 84
+    },
+    "specifications": {
       "seats": 3,
       "materialKey": "textile",
       "manufacturerKey": "soft_form"
@@ -89,10 +106,13 @@
     "roomKeys": ["living_room", "bedroom"],
     "collectionKeys": ["teddy-accent"],
     "featureKeys": ["new_arrival"],
-    "specifications": {
+    "dimensions": {
       "widthCm": 84,
       "depthCm": 86,
-      "heightCm": 92,
+      "lengthCm": 86,
+      "heightCm": 92
+    },
+    "specifications": {
       "materialKey": "textile",
       "manufacturerKey": "comfort_lab"
     }
@@ -121,10 +141,13 @@
     "roomKeys": ["dining_room", "kitchen"],
     "collectionKeys": ["nordic-dining"],
     "featureKeys": ["made_in_ukraine"],
-    "specifications": {
+    "dimensions": {
       "widthCm": 180,
       "depthCm": 90,
-      "heightCm": 76,
+      "lengthCm": 90,
+      "heightCm": 76
+    },
+    "specifications": {
       "materialKey": "wood",
       "manufacturerKey": "woodline"
     }
@@ -153,10 +176,13 @@
     "roomKeys": ["kitchen", "dining_room"],
     "collectionKeys": ["milo-dining"],
     "featureKeys": ["easy_care"],
-    "specifications": {
+    "dimensions": {
       "widthCm": 48,
       "depthCm": 58,
-      "heightCm": 86,
+      "lengthCm": 58,
+      "heightCm": 86
+    },
+    "specifications": {
       "materialKey": "textile",
       "manufacturerKey": "comfort_lab"
     }
@@ -185,10 +211,13 @@
     "roomKeys": ["living_room"],
     "collectionKeys": ["frame-media"],
     "featureKeys": ["storage_solution"],
-    "specifications": {
+    "dimensions": {
       "widthCm": 180,
       "depthCm": 42,
-      "heightCm": 54,
+      "lengthCm": 42,
+      "heightCm": 54
+    },
+    "specifications": {
       "materialKey": "wood",
       "manufacturerKey": "woodline"
     }
@@ -217,10 +246,13 @@
     "roomKeys": ["bedroom", "hallway"],
     "collectionKeys": ["mirror-storage"],
     "featureKeys": ["best_seller"],
-    "specifications": {
+    "dimensions": {
       "widthCm": 220,
       "depthCm": 62,
-      "heightCm": 240,
+      "lengthCm": 62,
+      "heightCm": 240
+    },
+    "specifications": {
       "materialKey": "wood",
       "manufacturerKey": "woodline"
     }
@@ -249,10 +281,13 @@
     "roomKeys": ["home_office"],
     "collectionKeys": ["core-office"],
     "featureKeys": ["made_in_ukraine"],
-    "specifications": {
+    "dimensions": {
       "widthCm": 140,
       "depthCm": 70,
-      "heightCm": 76,
+      "lengthCm": 70,
+      "heightCm": 76
+    },
+    "specifications": {
       "materialKey": "wood",
       "manufacturerKey": "woodline"
     }

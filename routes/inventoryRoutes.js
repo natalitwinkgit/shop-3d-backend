@@ -1,6 +1,6 @@
 // routes/inventoryRoutes.js
 import { Router } from "express";
-import { getByProduct, upsert } from "../controllers/inventoryController.js";
+import { getByProduct, remove, upsert } from "../controllers/inventoryController.js";
 import { protect, admin } from "../middleware/authMiddleware.js";
 
 const router = Router();
@@ -10,5 +10,6 @@ router.get("/product/:productId", getByProduct);
 
 // Створити або оновити залишки (PATCH)
 router.patch("/", protect, admin, upsert);
+router.delete("/:id", protect, admin, remove);
 
 export default router;

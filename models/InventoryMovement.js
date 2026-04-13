@@ -4,7 +4,7 @@ const inventoryMovementSchema = new mongoose.Schema(
   {
     type: {
       type: String,
-      enum: ["upsert", "transfer"],
+      enum: ["upsert", "transfer", "delete"],
       required: true,
       index: true,
     },

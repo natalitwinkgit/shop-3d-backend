@@ -1,4 +1,8 @@
-import { normalizeRoomKeys } from "./catalogNormalizationService.js";
+import {
+  normalizeCollectionKeys,
+  normalizeRoomKeys,
+  normalizeStyleKeys,
+} from "./catalogNormalizationService.js";
 import {
   buildProductSku,
   buildProductSlug,
@@ -118,6 +122,60 @@ const parseObjectField = (value, fieldName) => {
   return parsed;
 };
 
+const DIMENSION_KEYS = ["widthCm", "depthCm", "heightCm", "lengthCm", "diameterCm"];
+
+const normalizeDimensionsObject = (value, fieldName = "dimensions") => {
+  if (value === undefined) return undefined;
+
+  const parsed = parseObjectField(value, fieldName);
+  const normalized = {};
+
+  DIMENSION_KEYS.forEach((key) => {
+    if (!hasOwn(parsed, key)) return;
+    const nextValue = parseNumberField(parsed[key], `${fieldName}.${key}`, { min: 0 });
+    if (nextValue !== undefined) normalized[key] = nextValue;
+  });
+
+  return normalized;
+};
+
+const pickLegacyDimensions = (source = {}) => {
+  const dimensions = {};
+
+  DIMENSION_KEYS.forEach((key) => {
+    if (!hasOwn(source, key)) return;
+    const nextValue = parseNumberField(source[key], key, { min: 0 });
+    if (nextValue !== undefined) dimensions[key] = nextValue;
+  });
+
+  return Object.keys(dimensions).length ? dimensions : undefined;
+};
+
+const extractDimensionKeysFromSpecifications = (specifications = {}) =>
+  DIMENSION_KEYS.reduce((acc, key) => {
+    const value = parseNumberField(specifications?.[key], `specifications.${key}`, { min: 0 });
+    if (value !== undefined) acc[key] = value;
+    return acc;
+  }, {});
+
+const pickFiniteDimensions = (dimensions = {}) =>
+  DIMENSION_KEYS.reduce((acc, key) => {
+    const value = dimensions?.[key];
+    if (Number.isFinite(value)) acc[key] = value;
+    return acc;
+  }, {});
+
+const syncDimensionsIntoSpecifications = (specifications = {}, dimensions = {}) => {
+  const nextSpecifications = isPlainObject(specifications) ? { ...specifications } : {};
+
+  DIMENSION_KEYS.forEach((key) => {
+    if (dimensions?.[key] === undefined) return;
+    nextSpecifications[key] = dimensions[key];
+  });
+
+  return nextSpecifications;
+};
+
 const resolveLocalizedText = ({
   body,
   fieldName,
@@ -170,10 +228,94 @@ const resolveLocalizedText = ({
   return { ua, en };
 };
 
+export const MAX_PRODUCT_IMAGE_COUNT = 10;
+
+const assertProductImageCount = (items = []) => {
+  if (items.length > MAX_PRODUCT_IMAGE_COUNT) {
+    throw createHttpError(400, `images must contain at most ${MAX_PRODUCT_IMAGE_COUNT} items`);
+  }
+};
+
 const mergePreviewIntoImages = (previewImage, images = []) => {
   const cleanImages = Array.from(new Set((images || []).map((item) => trimString(item)).filter(Boolean)));
-  if (!previewImage) return cleanImages;
-  return [previewImage, ...cleanImages.filter((item) => item !== previewImage)];
+  const mergedImages = previewImage
+    ? [previewImage, ...cleanImages.filter((item) => item !== previewImage)]
+    : cleanImages;
+
+  assertProductImageCount(mergedImages);
+  return mergedImages;
+};
+
+const previewImageFieldNames = ["previewImage", "imageUrl", "coverImageUrl", "mainImageUrl"];
+const imageListFieldNames = [
+  "images",
+  "images[]",
+  "keepImages",
+  "imageUrls",
+  "imageUrls[]",
+  "galleryUrls",
+  "galleryUrls[]",
+  "photoUrls",
+  "photoUrls[]",
+  "photos",
+  "photos[]",
+];
+
+const numberedImageFieldPattern =
+  /^(?:imageUrl|image|photoUrl|photo|galleryUrl|galleryImageUrl)(?:[_-]?)([1-9]\d*)$/i;
+
+const getNumberedImageFields = (body = {}) =>
+  Object.keys(body || {})
+    .map((field) => {
+      const match = String(field).match(numberedImageFieldPattern);
+      if (!match) return null;
+
+      const index = Number(match[1]);
+      if (index > MAX_PRODUCT_IMAGE_COUNT) {
+        throw createHttpError(
+          400,
+          `numbered image URL fields support only 1-${MAX_PRODUCT_IMAGE_COUNT}`
+        );
+      }
+
+      return { field, index };
+    })
+    .filter(Boolean)
+    .sort((left, right) => left.index - right.index);
+
+const parseNumberedImageField = (body, field) => {
+  const rawValue = body[field];
+  if (rawValue === undefined || rawValue === null) return [];
+
+  const parsed = tryParseJson(rawValue);
+  if (Array.isArray(parsed)) {
+    return parseStringArrayField(parsed, field) || [];
+  }
+
+  const value = parseStringField(rawValue, field, { strict: true });
+  return value ? [value] : [];
+};
+
+const resolveImageListInput = (body = {}) => {
+  const listFields = imageListFieldNames.filter((field) => hasOwn(body, field));
+  const numberedFields = getNumberedImageFields(body);
+  const imageList = Array.from(
+    new Set(
+      [
+        ...listFields.flatMap((field) => parseStringArrayField(body[field], field) || []),
+        ...numberedFields.flatMap(({ field }) => parseNumberedImageField(body, field)),
+      ]
+        .map((item) => trimString(item))
+        .filter(Boolean)
+    )
+  );
+
+  assertProductImageCount(imageList);
+
+  return {
+    imageList,
+    imagesProvided: listFields.length > 0 || numberedFields.length > 0,
+  };
 };
 
 export const buildProductMutationPayload = ({
@@ -278,7 +420,7 @@ export const buildProductMutationPayload = ({
   }
 
   const styleKeys = parseStringArrayField(body.styleKeys, "styleKeys");
-  if (styleKeys !== undefined) payload.styleKeys = styleKeys;
+  if (styleKeys !== undefined) payload.styleKeys = normalizeStyleKeys(styleKeys);
   else if (isCreate) payload.styleKeys = [];
 
   const colorKeys = parseStringArrayField(body.colorKeys ?? body.colors, "colorKeys");
@@ -290,16 +432,84 @@ export const buildProductMutationPayload = ({
   else if (isCreate) payload.roomKeys = [];
 
   const collectionKeys = parseStringArrayField(body.collectionKeys, "collectionKeys");
-  if (collectionKeys !== undefined) payload.collectionKeys = collectionKeys;
+  if (collectionKeys !== undefined) payload.collectionKeys = normalizeCollectionKeys(collectionKeys);
   else if (isCreate) payload.collectionKeys = [];
 
   const featureKeys = parseStringArrayField(body.featureKeys, "featureKeys");
   if (featureKeys !== undefined) payload.featureKeys = featureKeys;
   else if (isCreate) payload.featureKeys = [];
 
-  const specifications = parseObjectField(body.specifications, "specifications");
-  if (specifications !== undefined) payload.specifications = specifications;
-  else if (isCreate) payload.specifications = {};
+  const ipRating = hasOwn(body, "ipRating")
+    ? parseStringField(body.ipRating, "ipRating")
+    : undefined;
+
+  let specifications = parseObjectField(body.specifications, "specifications");
+  const materialId = hasOwn(body, "materialId")
+    ? parseStringField(body.materialId, "materialId", { strict: true })
+    : undefined;
+  const manufacturerId = hasOwn(body, "manufacturerId")
+    ? parseStringField(body.manufacturerId, "manufacturerId", { strict: true })
+    : undefined;
+
+  if (materialId !== undefined || manufacturerId !== undefined) {
+    specifications = {
+      ...(specifications || {}),
+      ...(materialId ? { material: materialId } : {}),
+      ...(manufacturerId ? { manufacturer: manufacturerId } : {}),
+    };
+  }
+
+  if (ipRating !== undefined) {
+    specifications = { ...(specifications || {}), ipRating };
+  }
+  if (partial && specifications !== undefined) {
+    specifications = {
+      ...(isPlainObject(existingProduct?.specifications) ? existingProduct.specifications : {}),
+      ...specifications,
+    };
+  }
+
+  const dimensionsFromBody = normalizeDimensionsObject(body.dimensions, "dimensions");
+  const dimensionsFromLegacyBody = pickLegacyDimensions(body);
+  const dimensionsFromExistingProduct = pickFiniteDimensions(existingProduct?.dimensions);
+
+  const nextDimensions =
+    dimensionsFromBody !== undefined
+      ? {
+          ...dimensionsFromExistingProduct,
+          ...extractDimensionKeysFromSpecifications(specifications || {}),
+          ...dimensionsFromBody,
+        }
+      : dimensionsFromLegacyBody !== undefined
+        ? {
+            ...dimensionsFromExistingProduct,
+            ...extractDimensionKeysFromSpecifications(specifications || {}),
+            ...dimensionsFromLegacyBody,
+          }
+        : specifications !== undefined
+          ? {
+              ...dimensionsFromExistingProduct,
+              ...extractDimensionKeysFromSpecifications(specifications),
+            }
+          : undefined;
+
+  if (nextDimensions !== undefined) payload.dimensions = nextDimensions;
+  else if (isCreate) payload.dimensions = {};
+
+  if (specifications !== undefined) {
+    payload.specifications =
+      nextDimensions !== undefined
+        ? syncDimensionsIntoSpecifications(specifications, nextDimensions)
+        : specifications;
+  } else if (isCreate) {
+    payload.specifications =
+      nextDimensions !== undefined ? syncDimensionsIntoSpecifications({}, nextDimensions) : {};
+  } else if (nextDimensions !== undefined) {
+    payload.specifications = syncDimensionsIntoSpecifications(
+      existingProduct?.specifications,
+      nextDimensions
+    );
+  }
 
   if (allowInventoryFields) {
     if (hasOwn(body, "inStock") || isCreate) {
@@ -314,32 +524,30 @@ export const buildProductMutationPayload = ({
     }
   }
 
-  const previewImageField = ["previewImage", "imageUrl", "coverImageUrl", "mainImageUrl"].find(
+  const previewImageField = previewImageFieldNames.find(
     (field) => hasOwn(body, field)
   );
-  const imagesField = ["images", "keepImages", "imageUrls", "galleryUrls", "photoUrls", "photos"].find(
-    (field) => hasOwn(body, field)
-  );
+  const { imageList, imagesProvided } = resolveImageListInput(body);
   const modelUrlField = ["modelUrl", "model3dUrl", "model3DUrl", "glbUrl"].find((field) =>
     hasOwn(body, field)
   );
 
   const previewImageProvided = Boolean(previewImageField);
-  const imagesProvided = Boolean(imagesField);
   const modelUrlProvided = Boolean(modelUrlField);
 
   const previewImage = previewImageProvided
     ? parseStringField(body[previewImageField], previewImageField, { strict: true }) || ""
-    : undefined;
-  const imageList = imagesProvided
-    ? parseStringArrayField(body[imagesField], imagesField) || []
     : undefined;
   const currentImages = Array.isArray(existingProduct?.images) ? existingProduct.images : [];
   const currentPreview =
     trimString(existingProduct?.previewImage) || trimString(currentImages[0]) || "";
 
   if (previewImageProvided || imagesProvided || isCreate) {
-    const baseImages = imageList ?? currentImages;
+    const baseImages = imagesProvided
+      ? imageList
+      : previewImageProvided
+        ? currentImages.filter((item) => trimString(item) !== currentPreview)
+        : currentImages;
     const resolvedPreview = previewImageProvided
       ? previewImage
       : imagesProvided

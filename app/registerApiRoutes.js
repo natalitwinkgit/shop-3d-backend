@@ -18,6 +18,9 @@ import heartbeatRoutes from "../routes/heartbeatRoutes.js";
 import i18nMissingRoutes from "../routes/i18nMissingRoutes.js";
 import inventoryRoutes from "../routes/inventoryRoutes.js";
 import colorRoutes from "../routes/colorRoutes.js";
+import materialRoutes from "../routes/materialRoutes.js";
+import manufacturerRoutes from "../routes/manufacturerRoutes.js";
+import productAttributeRoutes from "../routes/productAttributeRoutes.js";
 
 export const registerApiRoutes = (app) => {
   app.use("/api/auth", authRoutes);
@@ -36,6 +39,9 @@ export const registerApiRoutes = (app) => {
   app.use("/api/chat", chatRoutes);
   app.use("/api/inventory", inventoryRoutes);
   app.use("/api/colors", colorRoutes);
+  app.use("/api/materials", materialRoutes);
+  app.use("/api/manufacturers", manufacturerRoutes);
+  app.use("/api/product-attributes", productAttributeRoutes);
   app.use("/api/admin", adminRoutes);
   app.use("/api/users", userRoutes);
   app.use("/api/heartbeat", heartbeatRoutes);

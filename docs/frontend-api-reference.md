@@ -28,6 +28,9 @@ Source of truth: current mounted routes in `index.js` and route definitions in `
 - `403` -> forbidden or banned user
 - `404` -> entity/route not found
 - `500` -> server error
+- This repository does not contain a frontend state manager such as `Redux`.
+- Frontend state should treat backend API responses as the source of truth; domain data is persisted in MongoDB and exposed through `/api/*`.
+- In current docs, references to query/UI state mean local page state or URL state on the frontend, not a centralized store implemented in this repository.
 
 ## Public API
 
@@ -81,11 +84,16 @@ Source of truth: current mounted routes in `index.js` and route definitions in `
 - `PATCH /api/products/:id`
 - `DELETE /api/products/:id`
   - `POST/PUT/PATCH/DELETE` require admin auth
-  - `POST/PUT/PATCH` accept `application/json` or text-only `multipart/form-data`
-  - backend expects ready-to-use URL strings for `previewImage` and `modelUrl`; product media files are not uploaded through backend anymore
+  - `POST/PUT/PATCH` accept `application/json` or `multipart/form-data`
+  - backend accepts ready-to-use URL strings for `previewImage`, `images`, and `modelUrl`; admin product routes also accept product image/model files
   - backend auto-generates `slug`, `typeKey`, and `sku` when they are omitted
-  - for gallery URLs, backend accepts `images`, `imageUrls`, `galleryUrls`, or `photoUrls`
+  - standard physical sizes should be sent in `dimensions`
+  - type-specific professional attributes should be sent in `specifications`
+  - product images are limited to 10 URLs/files total, including the preview image
+  - first image is the preview: send it as `previewImage` / `imageUrl`, or put it first in the `images` / `imageUrls` list
+  - for gallery URLs, backend accepts `images`, `imageUrls`, `galleryUrls`, `photoUrls`, or numbered fields `imageUrl1` ... `imageUrl10`
   - URL lists can be sent as a JSON array, comma-separated string, or newline-separated string
+  - file uploads can use `imageFiles` with up to 10 files; if using `previewImageFile` separately, keep gallery files to 9 so total product images stay <= 10
   - for 3D files, backend accepts both `modelUrl` and `model3dUrl`
   - request body supports either localized objects or simple strings for `name` / `description`
   - minimal body example:
@@ -96,6 +104,16 @@ Source of truth: current mounted routes in `index.js` and route definitions in `
     "category": "chairs",
     "subCategory": "soft",
     "price": 12999,
+    "dimensions": {
+      "widthCm": 84,
+      "lengthCm": 86,
+      "heightCm": 92
+    },
+    "specifications": {
+      "seats": 1,
+      "material": "material_object_id",
+      "manufacturer": "manufacturer_object_id"
+    },
     "previewImage": "https://res.cloudinary.com/your-cloud/image/upload/v1/products/chair-preview.jpg",
     "images": [
       "https://res.cloudinary.com/your-cloud/image/upload/v1/products/chair-preview.jpg",
@@ -105,7 +123,72 @@ Source of truth: current mounted routes in `index.js` and route definitions in `
   }
   ```
   - product responses include `_id`, `name`, `description`, `price`, `previewImage`, `modelUrl`, `colorKeys`, and optional hydrated `colors`
+  - product responses hydrate `specifications.material` and `specifications.manufacturer` when references or legacy keys can be resolved
   - current backend keeps the existing localized shape for `name` / `description` in responses: `{ ua, en }`
+
+Material / manufacturer dictionaries:
+
+- `GET /api/materials` returns all materials for select fields.
+- `GET /api/manufacturers` returns all manufacturers for select fields.
+- Admin-only writes are available under `/api/admin/materials` and `/api/admin/manufacturers`.
+- New product forms should send `specifications.material` and `specifications.manufacturer` as ObjectId strings from the dictionaries. The backend will keep legacy `materialKey` and `manufacturerKey` in sync for current filters.
+
+Product attribute dictionaries for product form selects:
+
+- Mongo collections: `productrooms`, `productstyles`, `productcollections`.
+- Response `kind` is API metadata only; dictionary rows are stored in separate Mongo collections.
+- `GET /api/product-attributes` returns `{ rooms, styles, collections }` for public/admin select options.
+- `GET /api/product-attributes/rooms`
+- `GET /api/product-attributes/styles`
+- `GET /api/product-attributes/collections`
+- Admin CRUD:
+  - `GET /api/admin/product-attributes`
+  - `GET/POST /api/admin/product-attributes/rooms`
+  - `GET/POST /api/admin/product-attributes/styles`
+  - `GET/POST /api/admin/product-attributes/collections`
+  - `PATCH /api/admin/product-attributes/:id`
+  - `DELETE /api/admin/product-attributes/:id`
+- Product create/edit forms should load these dictionaries and send selected keys in `roomKeys`, `styleKeys`, and `collectionKeys`.
+- If a dictionary collection has active values, backend rejects unknown keys for that field with `400`.
+- Frontend form notes are in `docs/frontend-product-attributes-cheatsheet.md`.
+
+Product attribute item shape:
+
+```json
+{
+  "_id": "attribute_id",
+  "kind": "room",
+  "key": "living_room",
+  "name": { "ua": "Вітальня", "en": "Living room" },
+  "description": { "ua": "", "en": "" },
+  "aliases": ["living_room", "living-room", "livingroom"],
+  "sortOrder": 0,
+  "isActive": true
+}
+```
+
+Hydrated product response example:
+
+```json
+{
+  "specifications": {
+    "material": {
+      "_id": "material_id",
+      "key": "velour",
+      "name": { "ua": "Велюр", "en": "Velour" },
+      "description": { "ua": "", "en": "" }
+    },
+    "manufacturer": {
+      "_id": "manufacturer_id",
+      "key": "soft_form",
+      "name": "Soft Form",
+      "country": "Ukraine",
+      "website": ""
+    },
+    "ipRating": "IP44"
+  }
+}
+```
 
 ### Categories / Subcategories
 
@@ -140,6 +223,7 @@ Source of truth: current mounted routes in `index.js` and route definitions in `
 
 - `GET /api/spec-templates/:typeKey`
 - `GET /api/inventory/product/:productId`
+- `GET /api/inventory/product/:productId?view=full`
 - `GET /api/heartbeat`
 - `GET /api/i18n-missing`
 - `POST /api/i18n-missing`
@@ -590,9 +674,18 @@ When AI reply is actually sent, `message.meta.productCards` may contain clickabl
 - `PUT /api/admin/products/:id`
 - `PATCH /api/admin/products/:id`
 - `DELETE /api/admin/products/:id`
+- `GET /api/admin/products/:id/dimensions`
+- `PATCH /api/admin/products/:id/dimensions`
+- `DELETE /api/admin/products/:id/dimensions`
+- `GET /api/admin/products/:id/ip-rating`
+- `PATCH /api/admin/products/:id/ip-rating`
+- `DELETE /api/admin/products/:id/ip-rating`
+- `GET /api/admin/products/:id/characteristics`
+- `PATCH /api/admin/products/:id/characteristics`
+- `DELETE /api/admin/products/:id/characteristics`
 
-`POST/PUT/PATCH /api/admin/products` accept `application/json` or text-only `multipart/form-data`.
-Product media must be sent as URL fields, not uploaded files.
+`POST/PUT/PATCH /api/admin/products` accept `application/json` or `multipart/form-data`.
+Product media can be sent as URL fields or uploaded files. Product images are capped at 10 total images, including preview.
 
 Common fields:
 
@@ -613,11 +706,83 @@ Common fields:
 - `roomKeys`
 - `collectionKeys`
 - `featureKeys`
+- `dimensions`
 - `specifications`
 - `previewImage`
 - `modelUrl`
 - `images[]`
 - `keepImages` for edit
+- `imageUrl1` ... `imageUrl10` for simple one-input-per-photo forms
+- `inventoryRows`
+- `inventoryByLocations` (alias of `inventoryRows`)
+
+Admin characteristics endpoints:
+
+- `GET /api/admin/products/:id/characteristics` returns `{ dimensions, specifications, ipRating }`.
+- `PATCH /api/admin/products/:id/characteristics` accepts `dimensions`, `specifications`, top-level `ipRating`, top-level `materialId` / `manufacturerId`, or top-level dimension aliases like `widthCm`, `heightCm`, `lengthCm`.
+- `DELETE /api/admin/products/:id/characteristics` clears standardized dimensions and `specifications.ipRating`, while preserving other product fields.
+
+Recommended dimensions payload:
+
+```json
+{
+  "dimensions": {
+    "widthCm": 84,
+    "heightCm": 92,
+    "lengthCm": 86
+  }
+}
+```
+
+Inline inventory payload for new or existing product:
+
+```json
+{
+  "name": { "ua": "Диван Arco Straight Sand", "en": "Arco Straight Sofa Sand" },
+  "category": "sofas",
+  "subCategory": "straight",
+  "price": 32999,
+  "inventoryRows": [
+    {
+      "locationId": "location_id",
+      "onHand": 2,
+      "reserved": 0,
+      "zone": "Hall A / Stand 3",
+      "note": "Display sample",
+      "isShowcase": true,
+      "reason": "Initial stock"
+    }
+  ]
+}
+```
+
+Inventory row aliases accepted inside `inventoryRows[]` and `inventoryByLocations[]`:
+
+- `locationId`
+- `location`
+- `inventoryLocationId`
+- `storageLocationId`
+- `storageLocation`
+- `onHand`
+- `quantity`
+- `qty`
+- `locationQty`
+- `reserved`
+- `reservedQty`
+- `zone`
+- `storageZone`
+- `note`
+- `isShowcase`
+- `showcase`
+- `reason`
+
+Notes:
+
+- `POST /api/admin/products` can now create the product and immediately upsert one or more inventory rows.
+- `PATCH /api/admin/products/:id` and `PUT /api/admin/products/:id` accept the same `inventoryRows` / `inventoryByLocations` block for existing products.
+- Product responses include inventory availability derived from `inventories`: `inventorySummary`, `availableLocations`, `pickupLocations`, `availableTotal`, `stockQty`, `inStock`, and `hasStock`.
+- Admin product list/detail responses also include `inventoryRows` / `inventoryByLocations` with per-location `onHand`, `reserved`, and `available` quantities.
+- Public product detail responses (`GET /api/products/:id`, `GET /api/products/by-slug/:slug`) include `inventoryRows` so the storefront can show where the item can be picked up.
 
 ### User filter sidebar
 
@@ -757,6 +922,46 @@ Notes:
 - `typeKey` is optional; backend builds it from `category` + `subCategory`
 - multiple image URLs can be sent in `images`, `imageUrls`, `galleryUrls`, or `photoUrls`
 - 3D model URL can be sent in `modelUrl` or `model3dUrl`
+
+### Reference dictionaries
+
+- `GET /api/materials`
+- `GET /api/manufacturers`
+- `GET /api/admin/materials`
+- `POST /api/admin/materials`
+- `PATCH /api/admin/materials/:id`
+- `DELETE /api/admin/materials/:id`
+- `GET /api/admin/manufacturers`
+- `POST /api/admin/manufacturers`
+- `PATCH /api/admin/manufacturers/:id`
+- `DELETE /api/admin/manufacturers/:id`
+
+Material create body:
+
+```json
+{
+  "key": "velour",
+  "name": {
+    "ua": "Велюр",
+    "en": "Velour"
+  },
+  "description": {
+    "ua": "М'який меблевий велюр",
+    "en": "Soft furniture velour"
+  }
+}
+```
+
+Manufacturer create body:
+
+```json
+{
+  "key": "soft_form",
+  "name": "Soft Form",
+  "country": "Ukraine",
+  "website": "https://example.com"
+}
+```
 
 ### Categories / Subcategories
 
@@ -950,8 +1155,91 @@ Status body:
 - `GET /api/admin/inventory/location/:locationId`
 - `GET /api/admin/inventory/product/:productId`
 - `PATCH /api/admin/inventory`
+- `DELETE /api/admin/inventory/:id`
 - `POST /api/admin/inventory/transfer`
 - `GET /api/admin/inventory/movements?productId=&locationId=&type=&limit=`
+
+Public inventory detail for storefront/product page:
+
+- `GET /api/inventory/product/:productId` keeps the legacy response shape and returns an array of inventory rows
+- `GET /api/inventory/product/:productId?view=full` returns an expanded payload for frontend flows like `city -> location type -> specific point`
+- `GET /api/admin/inventory/product/:productId` now returns the expanded admin payload by default, even without `?view=full`
+- supported query params in full mode:
+  - `city=Kyiv`
+  - `cityKey=kyiv`
+  - `type=showroom`
+  - `locationId=<location_id>`
+  - `showcase=true`
+
+Expanded public response example:
+
+```json
+{
+  "product": {
+    "id": "product_id",
+    "name": { "ua": "Стіл", "en": "Table" },
+    "slug": "table-oak",
+    "category": "tables",
+    "status": "active",
+    "dimensions": {
+      "widthCm": 120,
+      "lengthCm": 180,
+      "heightCm": 75
+    },
+    "specifications": {
+      "material": {
+        "key": "wood",
+        "name": { "ua": "Дерево", "en": "Wood" }
+      }
+    }
+  },
+  "filters": {
+    "city": "Kyiv",
+    "cityKey": "kyiv",
+    "type": "showroom",
+    "locationId": "",
+    "showcase": null
+  },
+  "facets": {
+    "cities": [
+      { "city": "Kyiv", "cityKey": "kyiv", "cityLabel": "Kyiv", "count": 2 }
+    ],
+    "types": [
+      { "type": "showroom", "count": 1 },
+      { "type": "warehouse", "count": 1 }
+    ],
+    "locations": [
+      {
+        "id": "location_id",
+        "city": "Kyiv",
+        "cityKey": "kyiv",
+        "cityLabel": "Kyiv",
+        "type": "showroom",
+        "name": "Center Showroom",
+        "address": "Main st. 1",
+        "isActive": true
+      }
+    ]
+  },
+  "summary": {
+    "rows": 1,
+    "onHand": 3,
+    "reserved": 1,
+    "available": 2,
+    "showcaseRows": 1
+  },
+  "items": []
+}
+```
+
+Frontend recommendation for product point selector:
+
+1. Load `GET /api/inventory/product/:productId?view=full`
+2. Build city selector from `facets.cities`
+3. After city selection, filter point types from `facets.types` or request the same endpoint with `city/cityKey`
+4. After point type selection, render concrete pickup/showroom points from `facets.locations`
+5. Show product size/spec fields from `product.dimensions` and `product.specifications`
+6. Use `summary.available` and row-level `available` for quantity UX, but keep final stock validation on backend
 
 Inventory upsert body:
 
@@ -994,19 +1282,41 @@ Body:
 ```json
 {
   "sectionId": "main",
-  "field": {
-    "key": "depth",
+    "field": {
+    "key": "depthCm",
     "label": {
       "ua": "Глибина",
       "en": "Depth"
     },
     "kind": "number",
-    "path": "dimensions.depth",
-    "unit": "mm",
+    "path": "dimensions.depthCm",
+    "unit": "cm",
     "required": false
   }
 }
 ```
+
+Inventory delete:
+
+- `DELETE /api/admin/inventory/:id`
+- optional query/body field: `reason`
+- response:
+```json
+{
+  "ok": true,
+  "removed": {
+    "id": "inventory_row_id"
+  }
+}
+```
+
+Recommended product data split:
+
+- `dimensions`: shared measurable geometry used across many product groups. Preferred storefront fields are `widthCm`, `heightCm`, and `lengthCm`; `depthCm` and `diameterCm` are still supported for backward compatibility and round/cylindrical products.
+- `specifications`: professional type-specific attributes.
+- sofa / armchair / bed: `seats`, `sleepingArea`, `mechanismKey`, `upholstery`, `maxLoadKg`
+- table / commode / wardrobe: `material`, `doorCount`, `drawerCount`, `shelfCount`
+- lighting: `bulbBase`, `bulbCount`, `wattage`, `lightTemperatureK`, `voltageV`, `ipRating`
 
 ### Admin Chat
 
@@ -1173,6 +1483,72 @@ Payload contains the saved message from DB plus aliases:
   "meta": null,
   "createdAt": "2026-03-27T12:00:00.000Z"
 }
+```
+
+## Frontend Update Checklist
+
+### Admin frontend
+
+- [ ] Product create/edit form: replace free-text `materialKey` input with a select loaded from `GET /api/admin/materials` or `GET /api/materials`.
+- [ ] Product create/edit form: replace free-text `manufacturerKey` input with a select loaded from `GET /api/admin/manufacturers` or `GET /api/manufacturers`.
+- [ ] Product create/edit payload: send selected dictionary ids as `specifications.material` and `specifications.manufacturer`.
+- [ ] Product create/edit payload: send size fields under `dimensions` as `widthCm`, `heightCm`, `lengthCm`; keep `depthCm` only if the UI still needs backward-compatible depth.
+- [ ] Product create/edit payload: keep dynamic technical fields in `specifications`, for example `ipRating`, `wattage`, `seats`, `doorCount`, `shelfCount`.
+- [ ] Product characteristics panel: use `GET /api/admin/products/:id/characteristics` for dimensions and specifications preview.
+- [ ] Product characteristics panel: use `PATCH /api/admin/products/:id/characteristics` to update `dimensions`, `ipRating`, `materialId`, `manufacturerId`, or full `specifications`.
+- [ ] Product characteristics panel: use `DELETE /api/admin/products/:id/characteristics` only when the admin intentionally clears dimensions and `ipRating`.
+- [ ] Dictionary management screen: add materials CRUD using `GET/POST/PATCH/DELETE /api/admin/materials`.
+- [ ] Dictionary management screen: add manufacturers CRUD using `GET/POST/PATCH/DELETE /api/admin/manufacturers`.
+- [ ] Form validation: show backend 400 messages directly for invalid references, for example `specifications.material was not found`.
+- [ ] Product table/details: render hydrated `product.specifications.material.name[lang]` and `product.specifications.manufacturer.name` instead of raw `materialKey` / `manufacturerKey`.
+
+Recommended admin product payload:
+
+```json
+{
+  "name": { "ua": "Світильник Loft IP44", "en": "Loft IP44 Lamp" },
+  "category": "lighting",
+  "subCategory": "wall",
+  "price": 4999,
+  "dimensions": {
+    "widthCm": 18,
+    "heightCm": 32,
+    "lengthCm": 12
+  },
+  "specifications": {
+    "material": "material_object_id",
+    "manufacturer": "manufacturer_object_id",
+    "ipRating": "IP44",
+    "wattage": 12
+  }
+}
+```
+
+### Storefront / user frontend
+
+- [ ] Product cards/details: read sizes from `product.dimensions.widthCm`, `product.dimensions.heightCm`, and `product.dimensions.lengthCm`.
+- [ ] Product cards/details: render material from `product.specifications.material.name[currentLang]` when available.
+- [ ] Product cards/details: render manufacturer from `product.specifications.manufacturer.name` and optional `country`.
+- [ ] Product cards/details: keep fallback support for legacy `product.specifications.materialKey` and `product.specifications.manufacturerKey` until all frontend views are migrated.
+- [ ] Catalog filters: continue using `GET /api/products/facets` for `materialKeys` and `manufacturerKeys` if the current filter UI expects keys.
+- [ ] Catalog filters: use `GET /api/materials` and `GET /api/manufacturers` to map facet keys to display labels in select/filter UI.
+- [ ] Product details availability block: if using `GET /api/inventory/product/:productId?view=full`, render dimensions from `response.product.dimensions`.
+- [ ] Localization: use `material.name.ua` / `material.name.en` instead of frontend switch/case dictionaries.
+- [ ] Error handling: treat missing optional dimensions as absent values, not as zero; backend omits non-numeric dimension values in normalized responses.
+
+Recommended storefront render fallback:
+
+```ts
+const materialName =
+  product.specifications?.material?.name?.[lang] ||
+  product.specifications?.material?.name?.en ||
+  product.specifications?.materialKey ||
+  "";
+
+const manufacturerName =
+  product.specifications?.manufacturer?.name ||
+  product.specifications?.manufacturerKey ||
+  "";
 ```
 
 ## Frontend Integration Recommendations

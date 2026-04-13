@@ -1,4 +1,4 @@
-const ROOM_KEY_ALIASES = {
+export const ROOM_KEY_ALIASES = {
   living_room: ["living_room", "living-room", "livingroom"],
   bedroom: ["bedroom", "bed_room", "bed-room"],
   bathroom: ["bathroom", "bath_room", "bath-room"],
@@ -21,6 +21,17 @@ const normalizeKey = (value) =>
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
+
+export const normalizeCatalogKey = (value) => normalizeKey(value);
+
+export const normalizeCatalogKeys = (values = []) =>
+  Array.from(
+    new Set(
+      (Array.isArray(values) ? values : [values])
+        .map((value) => normalizeCatalogKey(value))
+        .filter(Boolean)
+    )
+  );
 
 export const normalizeRoomKey = (value) => {
   const normalized = normalizeKey(value);
@@ -61,11 +72,37 @@ export const normalizeMaterialKeys = (values = []) =>
     )
   );
 
+export const normalizeStyleKeys = (values = []) => normalizeCatalogKeys(values);
+
+export const normalizeCollectionKeys = (values = []) => normalizeCatalogKeys(values);
+
+const normalizeProductDimensions = (productDoc = {}) => {
+  const rawDimensions =
+    productDoc?.dimensions && typeof productDoc.dimensions === "object" ? productDoc.dimensions : {};
+  const legacySpecifications =
+    productDoc?.specifications && typeof productDoc.specifications === "object"
+      ? productDoc.specifications
+      : {};
+
+  const dimensions = {
+    widthCm: rawDimensions.widthCm ?? legacySpecifications.widthCm ?? null,
+    depthCm: rawDimensions.depthCm ?? legacySpecifications.depthCm ?? null,
+    heightCm: rawDimensions.heightCm ?? legacySpecifications.heightCm ?? null,
+    lengthCm: rawDimensions.lengthCm ?? legacySpecifications.lengthCm ?? null,
+    diameterCm: rawDimensions.diameterCm ?? legacySpecifications.diameterCm ?? null,
+  };
+
+  return Object.fromEntries(
+    Object.entries(dimensions).filter(([, value]) => Number.isFinite(value))
+  );
+};
+
 export const extractProductMaterialKeys = (productDoc = {}) => {
   const specifications = productDoc?.specifications || {};
   const materialKeys = [];
 
   if (specifications.materialKey) materialKeys.push(specifications.materialKey);
+  if (specifications.material?.key) materialKeys.push(specifications.material.key);
   if (Array.isArray(specifications.materialKeys)) materialKeys.push(...specifications.materialKeys);
 
   if (Array.isArray(specifications.materials)) {
@@ -115,8 +152,11 @@ export const normalizeProductCatalogPayload = (productDoc = {}) => ({
     (typeof productDoc?.previewImage === "string" && productDoc.previewImage.trim()) ||
     (Array.isArray(productDoc?.images) ? productDoc.images.find((item) => String(item || "").trim()) || "" : ""),
   modelUrl: typeof productDoc?.modelUrl === "string" ? productDoc.modelUrl : "",
+  dimensions: normalizeProductDimensions(productDoc),
   colorKeys: normalizeProductColorKeys(productDoc),
   colors: normalizeProductColors(productDoc?.colors),
+  styleKeys: normalizeStyleKeys(productDoc?.styleKeys || []),
   roomKeys: normalizeRoomKeys(productDoc?.roomKeys || []),
+  collectionKeys: normalizeCollectionKeys(productDoc?.collectionKeys || []),
   materialKeys: extractProductMaterialKeys(productDoc),
 });
