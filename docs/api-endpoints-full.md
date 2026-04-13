@@ -144,6 +144,10 @@
 - PATCH /api/admin/products/:id/characteristics
 - DELETE /api/admin/products/:id/characteristics
 
+Notes:
+- `POST/PUT/PATCH /api/admin/products` also accept inline inventory rows under `inventoryRows` or `inventoryByLocations`.
+- Each inventory row can include `locationId`, `onHand`, `reserved`, `zone`, `note`, `isShowcase`, `reason`.
+
 ### Admin Reference Dictionaries
 - GET /api/admin/materials
 - POST /api/admin/materials
@@ -204,6 +208,9 @@
 - DELETE /api/admin/inventory/:id
 - POST /api/admin/inventory/transfer
 - GET /api/admin/inventory/movements
+
+Notes:
+- `GET /api/admin/inventory/product/:productId` returns expanded payload with `product`, `summary`, and `items` by default.
 
 ### Admin Spec
 - GET /api/admin/spec-templates/:typeKey

@@ -28,6 +28,9 @@ Source of truth: current mounted routes in `index.js` and route definitions in `
 - `403` -> forbidden or banned user
 - `404` -> entity/route not found
 - `500` -> server error
+- This repository does not contain a frontend state manager such as `Redux`.
+- Frontend state should treat backend API responses as the source of truth; domain data is persisted in MongoDB and exposed through `/api/*`.
+- In current docs, references to query/UI state mean local page state or URL state on the frontend, not a centralized store implemented in this repository.
 
 ## Public API
 
@@ -672,6 +675,8 @@ Common fields:
 - `modelUrl`
 - `images[]`
 - `keepImages` for edit
+- `inventoryRows`
+- `inventoryByLocations` (alias of `inventoryRows`)
 
 Admin characteristics endpoints:
 
@@ -690,6 +695,54 @@ Recommended dimensions payload:
   }
 }
 ```
+
+Inline inventory payload for new or existing product:
+
+```json
+{
+  "name": { "ua": "Диван Arco Straight Sand", "en": "Arco Straight Sofa Sand" },
+  "category": "sofas",
+  "subCategory": "straight",
+  "price": 32999,
+  "inventoryRows": [
+    {
+      "locationId": "location_id",
+      "onHand": 2,
+      "reserved": 0,
+      "zone": "Hall A / Stand 3",
+      "note": "Display sample",
+      "isShowcase": true,
+      "reason": "Initial stock"
+    }
+  ]
+}
+```
+
+Inventory row aliases accepted inside `inventoryRows[]` and `inventoryByLocations[]`:
+
+- `locationId`
+- `location`
+- `inventoryLocationId`
+- `storageLocationId`
+- `storageLocation`
+- `onHand`
+- `quantity`
+- `qty`
+- `locationQty`
+- `reserved`
+- `reservedQty`
+- `zone`
+- `storageZone`
+- `note`
+- `isShowcase`
+- `showcase`
+- `reason`
+
+Notes:
+
+- `POST /api/admin/products` can now create the product and immediately upsert one or more inventory rows.
+- `PATCH /api/admin/products/:id` and `PUT /api/admin/products/:id` accept the same `inventoryRows` / `inventoryByLocations` block for existing products.
+- Product response now may include `inventoryRows` and `inventorySummary` when inventory data was sent in the same request.
 
 ### User filter sidebar
 
@@ -1070,6 +1123,7 @@ Public inventory detail for storefront/product page:
 
 - `GET /api/inventory/product/:productId` keeps the legacy response shape and returns an array of inventory rows
 - `GET /api/inventory/product/:productId?view=full` returns an expanded payload for frontend flows like `city -> location type -> specific point`
+- `GET /api/admin/inventory/product/:productId` now returns the expanded admin payload by default, even without `?view=full`
 - supported query params in full mode:
   - `city=Kyiv`
   - `cityKey=kyiv`

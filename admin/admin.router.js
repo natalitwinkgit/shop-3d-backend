@@ -1,5 +1,6 @@
 import { Router } from "express";
 
+import { adminAuditLogger } from "../app/middleware/adminAuditLogger.js";
 import { admin, protect } from "../middleware/authMiddleware.js";
 import adminAiRoutes from "../routes/adminAiRoutes.js";
 import categoriesRoutes from "./routes/categories.routes.js";
@@ -18,6 +19,7 @@ import usersRoutes from "./routes/users.routes.js";
 const router = Router();
 
 router.use(protect, admin);
+router.use(adminAuditLogger);
 
 router.use(dashboardRoutes);
 router.use("/settings", settingsRoutes);

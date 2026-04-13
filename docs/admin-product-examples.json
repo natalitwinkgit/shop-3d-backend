@@ -29,6 +29,17 @@
       "lengthCm": 224,
       "heightCm": 118
     },
+    "inventoryRows": [
+      {
+        "locationId": "replace_with_location_id",
+        "onHand": 1,
+        "reserved": 0,
+        "zone": "Showroom Hall A",
+        "note": "Перший виставковий екземпляр",
+        "isShowcase": true,
+        "reason": "Initial stock"
+      }
+    ],
     "specifications": {
       "sleepingArea": "180x200",
       "materialKey": "textile",

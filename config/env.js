@@ -8,4 +8,5 @@ export const env = {
   mongoUri: String(
     process.env.MONGO_URI || process.env.MONGO_URL || process.env.DATABASE_URL || ""
   ).trim(),
+  jwtSecret: String(process.env.JWT_SECRET || "").trim(),
 };

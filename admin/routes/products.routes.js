@@ -1,6 +1,10 @@
 import multer from "multer";
 import { Router } from "express";
 
+import {
+  buildProductInventoryView,
+  upsertInventoryRow,
+} from "../../controllers/inventoryController.js";
 import { getProductsStats } from "../../controllers/productController.js";
 import Product from "../../models/Product.js";
 import { normalizeProductCatalogPayload } from "../../services/catalogNormalizationService.js";
@@ -17,8 +21,18 @@ import {
 const router = Router();
 const textOnlyMultipart = multer().none();
 const dimensionKeys = ["widthCm", "depthCm", "heightCm", "lengthCm", "diameterCm"];
+const inventoryCollectionKeys = ["inventoryRows", "inventoryByLocations", "inventory", "inventories"];
+const inventoryLocationKeys = [
+  "locationId",
+  "location",
+  "inventoryLocationId",
+  "storageLocationId",
+  "storageLocation",
+];
 
 const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
+const isPlainObject = (value) =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
 
 const tryParseJson = (value) => {
   if (typeof value !== "string") return value;
@@ -31,6 +45,140 @@ const tryParseJson = (value) => {
   } catch {
     return value;
   }
+};
+
+const pickTrimmedString = (...values) => {
+  for (const value of values) {
+    const normalized = String(value || "").trim();
+    if (normalized) return normalized;
+  }
+
+  return "";
+};
+
+const extractLocationId = (row = {}) => {
+  const directLocation = inventoryLocationKeys
+    .map((key) => row?.[key])
+    .find((value) => value !== undefined && value !== null && String(value).trim() !== "");
+
+  if (isPlainObject(directLocation)) {
+    return pickTrimmedString(
+      directLocation._id,
+      directLocation.id,
+      directLocation.locationId,
+      directLocation.value
+    );
+  }
+
+  return pickTrimmedString(directLocation);
+};
+
+const normalizeInventoryRowInput = (row = {}, index = 0) => {
+  const parsedRow = tryParseJson(row);
+  if (!isPlainObject(parsedRow)) {
+    throw createHttpError(400, `inventoryRows[${index}] must be an object`);
+  }
+
+  const locationId = extractLocationId(parsedRow);
+  const hasRowPayload =
+    inventoryLocationKeys.some((key) => hasOwn(parsedRow, key)) ||
+    ["onHand", "quantity", "qty", "locationQty", "reserved", "reservedQty", "zone", "note"].some(
+      (key) => hasOwn(parsedRow, key)
+    );
+
+  if (!hasRowPayload) return null;
+  if (!locationId) {
+    throw createHttpError(400, `inventoryRows[${index}].locationId is required`);
+  }
+
+  return {
+    locationId,
+    onHand:
+      parsedRow.onHand ??
+      parsedRow.quantity ??
+      parsedRow.qty ??
+      parsedRow.locationQty ??
+      parsedRow.stockQty,
+    reserved: parsedRow.reserved ?? parsedRow.reservedQty,
+    zone: parsedRow.zone ?? parsedRow.storageZone,
+    note: parsedRow.note,
+    isShowcase: parsedRow.isShowcase ?? parsedRow.showcase,
+    reason: parsedRow.reason,
+  };
+};
+
+const parseInventoryRowsFromBody = (body = {}) => {
+  const collectionKey = inventoryCollectionKeys.find((key) => hasOwn(body, key));
+  let sourceRows = null;
+
+  if (collectionKey) {
+    const rawValue = body[collectionKey];
+    if (rawValue === undefined || rawValue === null || String(rawValue).trim() === "") {
+      return [];
+    }
+
+    const parsed = tryParseJson(rawValue);
+
+    if (Array.isArray(parsed)) {
+      sourceRows = parsed;
+    } else if (isPlainObject(parsed) && Array.isArray(parsed.items)) {
+      sourceRows = parsed.items;
+    } else if (isPlainObject(parsed) && Array.isArray(parsed.rows)) {
+      sourceRows = parsed.rows;
+    } else if (isPlainObject(parsed)) {
+      sourceRows = [parsed];
+    } else {
+      throw createHttpError(400, `${collectionKey} must be an array of objects`);
+    }
+  } else if (
+    inventoryLocationKeys.some((key) => String(body?.[key] || "").trim() !== "") ||
+    ["onHand", "quantity", "qty", "locationQty", "reserved", "reservedQty", "zone", "note"].some(
+      (key) => hasOwn(body, key)
+    )
+  ) {
+    sourceRows = [body];
+  } else {
+    return [];
+  }
+
+  return sourceRows
+    .map((row, index) => normalizeInventoryRowInput(row, index))
+    .filter(Boolean);
+};
+
+const buildActorContext = (req) => ({
+  actorId: String(req.user?._id || req.user?.id || ""),
+  actorName: req.user?.name || req.user?.email || "Admin",
+});
+
+const syncInventoryRowsForProduct = async ({ productId, body, req }) => {
+  const inventoryRows = parseInventoryRowsFromBody(body);
+  if (!inventoryRows.length) return null;
+
+  for (const row of inventoryRows) {
+    await upsertInventoryRow({
+      productId,
+      locationId: row.locationId,
+      body: row,
+      actor: buildActorContext(req),
+    });
+  }
+
+  return buildProductInventoryView({
+    productId,
+    req,
+    extendedView: true,
+  });
+};
+
+const mergeInventoryIntoProductPayload = (productPayload, inventoryView) => {
+  if (!inventoryView) return productPayload;
+
+  return {
+    ...productPayload,
+    inventoryRows: inventoryView.items,
+    inventorySummary: inventoryView.summary,
+  };
 };
 
 router.get("/products", async (_req, res, next) => {
@@ -66,6 +214,8 @@ router.get("/products/:id", async (req, res, next) => {
 });
 
 router.post("/products", textOnlyMultipart, async (req, res, next) => {
+  let doc = null;
+
   try {
     const payload = await resolveProductSpecificationReferences(
       buildProductMutationPayload({
@@ -76,12 +226,23 @@ router.post("/products", textOnlyMultipart, async (req, res, next) => {
       { sourceBody: req.body }
     );
 
-    const doc = await Product.create(payload);
+    doc = await Product.create(payload);
+    const inventoryView = await syncInventoryRowsForProduct({
+      productId: String(doc._id),
+      body: req.body,
+      req,
+    });
     const hydrated = await attachReferenceDictionariesToProducts(
       await attachColorReferencesToProducts(doc.toObject())
     );
-    res.status(201).json(normalizeProductCatalogPayload(hydrated));
+    res
+      .status(201)
+      .json(mergeInventoryIntoProductPayload(normalizeProductCatalogPayload(hydrated), inventoryView));
   } catch (error) {
+    if (doc?._id) {
+      await Product.findByIdAndDelete(doc._id).catch(() => null);
+    }
+
     if (error?.code === 11000) {
       return next(createHttpError(409, "Product slug must be unique"));
     }
@@ -110,11 +271,18 @@ const updateAdminProduct = async (req, res, next) => {
       { $set: payload },
       { new: true, runValidators: true }
     );
+    const inventoryView = await syncInventoryRowsForProduct({
+      productId: String(saved._id),
+      body: req.body,
+      req,
+    });
 
     const hydrated = await attachReferenceDictionariesToProducts(
       await attachColorReferencesToProducts(saved.toObject())
     );
-    res.json(normalizeProductCatalogPayload(hydrated));
+    res.json(
+      mergeInventoryIntoProductPayload(normalizeProductCatalogPayload(hydrated), inventoryView)
+    );
   } catch (error) {
     if (error?.name === "CastError") {
       return next(createHttpError(400, "Product not found"));
