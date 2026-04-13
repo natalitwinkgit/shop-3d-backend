@@ -1,6 +1,7 @@
 import Inventory from "../models/Inventory.js";
 import InventoryMovement from "../models/InventoryMovement.js";
 import Location from "../models/Location.js";
+import mongoose from "mongoose";
 import Product from "../models/Product.js";
 import {
   buildLocationPresentation,
@@ -21,7 +22,60 @@ const toBool = (value) => String(value) === "true" || String(value) === "1" || v
 const isDuplicateKeyError = (error) =>
   Number(error?.code) === 11000 || String(error?.message || error || "").includes("E11000");
 
+const legacyInventoryIdFields = new Set(["productId", "locationId"]);
+const getDuplicateKeyFields = (error) =>
+  Array.from(
+    new Set([
+      ...Object.keys(error?.keyPattern || {}),
+      ...Object.keys(error?.keyValue || {}),
+    ])
+  );
+
+const dropLegacyInventoryIndexesIfNeeded = async (error) => {
+  const duplicateFields = getDuplicateKeyFields(error);
+  if (!duplicateFields.some((field) => legacyInventoryIdFields.has(field))) {
+    return false;
+  }
+
+  try {
+    const indexes = await Inventory.collection.indexes();
+    const legacyIndexes = (indexes || []).filter((indexDef) => {
+      const indexFields = Object.keys(indexDef?.key || {});
+      return indexDef?.name !== "_id_" && indexFields.some((field) => legacyInventoryIdFields.has(field));
+    });
+
+    if (!legacyIndexes.length) return true;
+
+    for (const indexDef of legacyIndexes) {
+      if (!indexDef?.name) continue;
+      // eslint-disable-next-line no-await-in-loop
+      await Inventory.collection.dropIndex(indexDef.name);
+    }
+
+    return true;
+  } catch (dropError) {
+    const message = String(dropError?.message || "");
+    if (
+      dropError?.codeName === "IndexNotFound" ||
+      /index not found/i.test(message) ||
+      /ns not found/i.test(message)
+    ) {
+      return true;
+    }
+
+    throw dropError;
+  }
+};
+
 const isObjectIdLike = (value) => /^[a-f0-9]{24}$/i.test(String(value || ""));
+const assertObjectId = (value, fieldName) => {
+  if (!mongoose.Types.ObjectId.isValid(String(value || ""))) {
+    const error = new Error(`${fieldName} is invalid`);
+    error.statusCode = 400;
+    throw error;
+  }
+};
+
 const LOCATION_SELECT =
   "_id type city cityKey name nameKey address addressKey phone workingHours coordinates isActive";
 const PRODUCT_SELECT =
@@ -248,6 +302,9 @@ const withInventoryPopulate = (query) =>
     .populate("location", LOCATION_SELECT);
 
 const ensureProductAndLocation = async ({ productId, locationId }) => {
+  assertObjectId(productId, "productId");
+  assertObjectId(locationId, "locationId");
+
   const [product, location] = await Promise.all([
     Product.findById(productId).select("_id name slug category status").lean(),
     Location.findById(locationId).select(LOCATION_SELECT).lean(),
@@ -277,6 +334,8 @@ export const buildProductInventoryView = async ({
   req,
   extendedView = false,
 } = {}) => {
+  assertObjectId(productId, "productId");
+
   const items = await Inventory.find({ product: productId })
     .populate("product", PRODUCT_SELECT)
     .populate("location", LOCATION_SELECT)
@@ -356,15 +415,30 @@ export const upsertInventoryRow = async ({
   } catch (error) {
     if (!isDuplicateKeyError(error)) throw error;
 
-    previous = await Inventory.findOne(filter).lean();
-    if (!previous) throw error;
+    let duplicateError = error;
+    const recoveredFromLegacyIndex = await dropLegacyInventoryIndexesIfNeeded(error);
+    if (recoveredFromLegacyIndex) {
+      try {
+        doc = await withInventoryPopulate(
+          Inventory.findOneAndUpdate(filter, { $set: updateData }, { new: true, upsert: true })
+        ).lean();
+      } catch (retryError) {
+        if (!isDuplicateKeyError(retryError)) throw retryError;
+        duplicateError = retryError;
+      }
+    }
 
-    if (inventoryRowMatches(previous, updateData)) {
-      doc = await withInventoryPopulate(Inventory.findById(previous._id)).lean();
-    } else {
-      doc = await withInventoryPopulate(
-        Inventory.findOneAndUpdate(filter, { $set: updateData }, { new: true, upsert: false })
-      ).lean();
+    if (!doc) {
+      previous = await Inventory.findOne(filter).lean();
+      if (!previous) throw duplicateError;
+
+      if (inventoryRowMatches(previous, updateData)) {
+        doc = await withInventoryPopulate(Inventory.findById(previous._id)).lean();
+      } else {
+        doc = await withInventoryPopulate(
+          Inventory.findOneAndUpdate(filter, { $set: updateData }, { new: true, upsert: false })
+        ).lean();
+      }
     }
   }
 
@@ -418,6 +492,7 @@ export async function getByProduct(req, res) {
 export async function getByLocation(req, res) {
   try {
     const { locationId } = req.params;
+    assertObjectId(locationId, "locationId");
     const items = await Inventory.find({ location: locationId })
       .populate("product", "name slug category status")
       .populate("location", LOCATION_SELECT)
@@ -521,6 +596,8 @@ export async function getOverview(req, res) {
 export async function upsert(req, res) {
   try {
     const { productId, locationId } = req.body;
+    assertObjectId(productId, "productId");
+    assertObjectId(locationId, "locationId");
     const { doc } = await upsertInventoryRow({
       productId,
       locationId,
@@ -531,7 +608,12 @@ export async function upsert(req, res) {
     const translations = await loadInventoryTranslations(req);
     return res.json(formatInventoryRow(doc, translations));
   } catch (e) {
-    return res.status(e.statusCode || 500).json({ message: "Upsert failed", error: String(e?.message || e) });
+    const statusCode = e?.statusCode || 500;
+    const message =
+      statusCode >= 500
+        ? "Inventory upsert failed"
+        : String(e?.message || "Inventory upsert failed");
+    return res.status(statusCode).json({ message, error: String(e?.message || e) });
   }
 }
 

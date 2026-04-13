@@ -55,7 +55,7 @@ const productSchema = new mongoose.Schema(
 
     inStock: { type: Boolean, default: true, index: true },
     stockQty: { type: Number, default: 0 },
-    status: { type: String, enum: ["active", "archived"], default: "active" },
+    status: { type: String, enum: ["active", "draft", "archived"], default: "active" },
 
     ratingAvg: { type: Number, default: 0 },
     ratingCount: { type: Number, default: 0 },

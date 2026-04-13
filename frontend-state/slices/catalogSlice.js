@@ -4,6 +4,7 @@ import { apiClient } from "../apiClient.js";
 const initialState = {
   items: [],
   facets: null,
+  productAttributes: null,
   selectedProduct: null,
   filters: {
     category: "",
@@ -48,6 +49,13 @@ export const loadFacetsThunk = createAsyncThunk("catalog/loadFacets", async () =
   return apiClient("/api/products/facets");
 });
 
+export const loadProductAttributesThunk = createAsyncThunk(
+  "catalog/loadProductAttributes",
+  async () => {
+    return apiClient("/api/product-attributes");
+  }
+);
+
 export const loadProductBySlugThunk = createAsyncThunk(
   "catalog/loadProductBySlug",
   async ({ slug }) => {
@@ -82,6 +90,9 @@ const catalogSlice = createSlice({
       })
       .addCase(loadFacetsThunk.fulfilled, (state, action) => {
         state.facets = action.payload || null;
+      })
+      .addCase(loadProductAttributesThunk.fulfilled, (state, action) => {
+        state.productAttributes = action.payload || null;
       })
       .addCase(loadProductBySlugThunk.fulfilled, (state, action) => {
         state.selectedProduct = action.payload || null;

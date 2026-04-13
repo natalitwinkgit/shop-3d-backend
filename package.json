@@ -12,6 +12,7 @@
     "products:colors:backfill": "node scripts/backfillProductColors.js",
     "products:dimensions:backfill": "node scripts/backfillProductDimensions.js",
     "products:references:backfill": "node scripts/backfillProductReferences.js",
+    "products:attributes:backfill": "node scripts/backfillProductAttributeDictionaries.js",
     "products:identity:backfill": "node scripts/backfillProductIdentity.js",
     "inventory:cleanup:orphans": "node scripts/cleanupOrphanInventory.js",
     "seed:test": "node scripts/seedTestData.js",

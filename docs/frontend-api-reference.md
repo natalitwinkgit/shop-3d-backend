@@ -84,13 +84,16 @@ Source of truth: current mounted routes in `index.js` and route definitions in `
 - `PATCH /api/products/:id`
 - `DELETE /api/products/:id`
   - `POST/PUT/PATCH/DELETE` require admin auth
-  - `POST/PUT/PATCH` accept `application/json` or text-only `multipart/form-data`
-  - backend expects ready-to-use URL strings for `previewImage` and `modelUrl`; product media files are not uploaded through backend anymore
+  - `POST/PUT/PATCH` accept `application/json` or `multipart/form-data`
+  - backend accepts ready-to-use URL strings for `previewImage`, `images`, and `modelUrl`; admin product routes also accept product image/model files
   - backend auto-generates `slug`, `typeKey`, and `sku` when they are omitted
   - standard physical sizes should be sent in `dimensions`
   - type-specific professional attributes should be sent in `specifications`
-  - for gallery URLs, backend accepts `images`, `imageUrls`, `galleryUrls`, or `photoUrls`
+  - product images are limited to 10 URLs/files total, including the preview image
+  - first image is the preview: send it as `previewImage` / `imageUrl`, or put it first in the `images` / `imageUrls` list
+  - for gallery URLs, backend accepts `images`, `imageUrls`, `galleryUrls`, `photoUrls`, or numbered fields `imageUrl1` ... `imageUrl10`
   - URL lists can be sent as a JSON array, comma-separated string, or newline-separated string
+  - file uploads can use `imageFiles` with up to 10 files; if using `previewImageFile` separately, keep gallery files to 9 so total product images stay <= 10
   - for 3D files, backend accepts both `modelUrl` and `model3dUrl`
   - request body supports either localized objects or simple strings for `name` / `description`
   - minimal body example:
@@ -129,6 +132,40 @@ Material / manufacturer dictionaries:
 - `GET /api/manufacturers` returns all manufacturers for select fields.
 - Admin-only writes are available under `/api/admin/materials` and `/api/admin/manufacturers`.
 - New product forms should send `specifications.material` and `specifications.manufacturer` as ObjectId strings from the dictionaries. The backend will keep legacy `materialKey` and `manufacturerKey` in sync for current filters.
+
+Product attribute dictionaries for product form selects:
+
+- Mongo collections: `productrooms`, `productstyles`, `productcollections`.
+- Response `kind` is API metadata only; dictionary rows are stored in separate Mongo collections.
+- `GET /api/product-attributes` returns `{ rooms, styles, collections }` for public/admin select options.
+- `GET /api/product-attributes/rooms`
+- `GET /api/product-attributes/styles`
+- `GET /api/product-attributes/collections`
+- Admin CRUD:
+  - `GET /api/admin/product-attributes`
+  - `GET/POST /api/admin/product-attributes/rooms`
+  - `GET/POST /api/admin/product-attributes/styles`
+  - `GET/POST /api/admin/product-attributes/collections`
+  - `PATCH /api/admin/product-attributes/:id`
+  - `DELETE /api/admin/product-attributes/:id`
+- Product create/edit forms should load these dictionaries and send selected keys in `roomKeys`, `styleKeys`, and `collectionKeys`.
+- If a dictionary collection has active values, backend rejects unknown keys for that field with `400`.
+- Frontend form notes are in `docs/frontend-product-attributes-cheatsheet.md`.
+
+Product attribute item shape:
+
+```json
+{
+  "_id": "attribute_id",
+  "kind": "room",
+  "key": "living_room",
+  "name": { "ua": "Вітальня", "en": "Living room" },
+  "description": { "ua": "", "en": "" },
+  "aliases": ["living_room", "living-room", "livingroom"],
+  "sortOrder": 0,
+  "isActive": true
+}
+```
 
 Hydrated product response example:
 
@@ -647,8 +684,8 @@ When AI reply is actually sent, `message.meta.productCards` may contain clickabl
 - `PATCH /api/admin/products/:id/characteristics`
 - `DELETE /api/admin/products/:id/characteristics`
 
-`POST/PUT/PATCH /api/admin/products` accept `application/json` or text-only `multipart/form-data`.
-Product media must be sent as URL fields, not uploaded files.
+`POST/PUT/PATCH /api/admin/products` accept `application/json` or `multipart/form-data`.
+Product media can be sent as URL fields or uploaded files. Product images are capped at 10 total images, including preview.
 
 Common fields:
 
@@ -675,6 +712,7 @@ Common fields:
 - `modelUrl`
 - `images[]`
 - `keepImages` for edit
+- `imageUrl1` ... `imageUrl10` for simple one-input-per-photo forms
 - `inventoryRows`
 - `inventoryByLocations` (alias of `inventoryRows`)
 
@@ -742,7 +780,9 @@ Notes:
 
 - `POST /api/admin/products` can now create the product and immediately upsert one or more inventory rows.
 - `PATCH /api/admin/products/:id` and `PUT /api/admin/products/:id` accept the same `inventoryRows` / `inventoryByLocations` block for existing products.
-- Product response now may include `inventoryRows` and `inventorySummary` when inventory data was sent in the same request.
+- Product responses include inventory availability derived from `inventories`: `inventorySummary`, `availableLocations`, `pickupLocations`, `availableTotal`, `stockQty`, `inStock`, and `hasStock`.
+- Admin product list/detail responses also include `inventoryRows` / `inventoryByLocations` with per-location `onHand`, `reserved`, and `available` quantities.
+- Public product detail responses (`GET /api/products/:id`, `GET /api/products/by-slug/:slug`) include `inventoryRows` so the storefront can show where the item can be picked up.
 
 ### User filter sidebar
 

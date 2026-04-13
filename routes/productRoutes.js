@@ -15,6 +15,8 @@ import {
 } from "../controllers/productController.js";
 import { normalizeProductCatalogPayload } from "../services/catalogNormalizationService.js";
 import { attachColorReferencesToProducts } from "../services/productColorReferenceService.js";
+import { attachProductAttributeReferencesToProducts } from "../services/productAttributeReferenceService.js";
+import { attachProductInventoryAvailability } from "../services/productInventoryAvailabilityService.js";
 import { attachReferenceDictionariesToProducts } from "../services/productReferenceService.js";
 
 import { protect, admin } from "../middleware/authMiddleware.js";
@@ -51,10 +53,16 @@ router.get("/by-slug/:category/:subCategory/:slug", async (req, res) => {
       subCategory: String(subCategory || "").trim(),
     }).lean();
     if (!product) return res.status(404).json({ message: "Product not found" });
-    const hydrated = await attachReferenceDictionariesToProducts(
-      await attachColorReferencesToProducts(product)
+    const hydrated = await attachProductAttributeReferencesToProducts(
+      await attachReferenceDictionariesToProducts(
+        await attachColorReferencesToProducts(product)
+      )
     );
-    res.json(normalizeProductCatalogPayload(hydrated));
+    const withInventory = await attachProductInventoryAvailability(hydrated, {
+      req,
+      includeRows: true,
+    });
+    res.json(normalizeProductCatalogPayload(withInventory));
   } catch (e) {
     res.status(500).json({ message: "Server error" });
   }
