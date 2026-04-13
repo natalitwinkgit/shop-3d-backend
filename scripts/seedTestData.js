@@ -8,6 +8,8 @@ import Inventory from "../models/Inventory.js";
 import InventoryMovement from "../models/InventoryMovement.js";
 import Like from "../models/Like.js";
 import Location from "../models/Location.js";
+import Manufacturer from "../models/Manufacturer.js";
+import Material from "../models/Material.js";
 import Message from "../models/Message.js";
 import Order from "../models/Order.js";
 import Product from "../models/Product.js";
@@ -396,6 +398,75 @@ const productDefs = expandProductDefs(baseProductDefs);
 const productColorPalette = loadMergedProductColors();
 const productColorLookup = buildColorLookup(productColorPalette);
 
+const buildProductDimensions = (specifications = {}) => {
+  const dimensions = {};
+  ["widthCm", "depthCm", "heightCm", "lengthCm", "diameterCm"].forEach((key) => {
+    if (Number.isFinite(specifications[key])) dimensions[key] = specifications[key];
+  });
+
+  if (!Number.isFinite(dimensions.lengthCm) && Number.isFinite(specifications.depthCm)) {
+    dimensions.lengthCm = specifications.depthCm;
+  }
+
+  return dimensions;
+};
+
+const MATERIAL_LABELS = {
+  textile: { ua: "Текстиль", en: "Textile" },
+  velour: { ua: "Велюр", en: "Velour" },
+  wood: { ua: "Дерево", en: "Wood" },
+  mdf: { ua: "МДФ", en: "MDF" },
+  metal: { ua: "Метал", en: "Metal" },
+  stone: { ua: "Камінь", en: "Stone" },
+};
+
+const MANUFACTURER_LABELS = {
+  soft_form: { name: "Soft Form", country: "Ukraine" },
+  comfort_lab: { name: "Comfort Lab", country: "Ukraine" },
+  woodline: { name: "Woodline", country: "Ukraine" },
+};
+
+const titleFromKey = (key) =>
+  String(key || "")
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+
+async function seedReferenceDictionaries() {
+  const materialKeys = Array.from(new Set(productDefs.flatMap((product) => product.materialKeys || [])));
+  const manufacturerKeys = Array.from(new Set(productDefs.map((product) => product.manufacturerKey).filter(Boolean)));
+
+  await Promise.all([
+    ...materialKeys.map((key) => {
+      const label = MATERIAL_LABELS[key] || { ua: titleFromKey(key), en: titleFromKey(key) };
+      return Material.updateOne(
+        { key },
+        { $setOnInsert: { key, name: label, description: { ua: "", en: "" } } },
+        { upsert: true }
+      );
+    }),
+    ...manufacturerKeys.map((key) => {
+      const label = MANUFACTURER_LABELS[key] || { name: titleFromKey(key), country: "" };
+      return Manufacturer.updateOne(
+        { key },
+        { $setOnInsert: { key, name: label.name, country: label.country, website: "" } },
+        { upsert: true }
+      );
+    }),
+  ]);
+
+  const [materials, manufacturers] = await Promise.all([
+    Material.find({ key: { $in: materialKeys } }).lean(),
+    Manufacturer.find({ key: { $in: manufacturerKeys } }).lean(),
+  ]);
+
+  return {
+    materialByKey: new Map(materials.map((item) => [item.key, item])),
+    manufacturerByKey: new Map(manufacturers.map((item) => [item.key, item])),
+  };
+}
+
 const locationDefs = [
   {
     type: "showroom",
@@ -768,13 +839,16 @@ async function seedLocations() {
   return Location.insertMany(docs);
 }
 
-async function seedProducts() {
+async function seedProducts(referenceDictionaries = {}) {
   const docs = productDefs.map((product, index) => {
     const resolvedColor = pickProductColor({
       product,
       palette: productColorPalette,
       colorLookup: productColorLookup,
     });
+
+    const material = referenceDictionaries.materialByKey?.get(product.materialKeys?.[0] || "");
+    const manufacturer = referenceDictionaries.manufacturerByKey?.get(product.manufacturerKey || "");
 
     return {
       name: { ua: product.nameUa, en: product.nameEn },
@@ -791,8 +865,12 @@ async function seedProducts() {
       roomKeys: product.roomKeys,
       collectionKeys: product.collectionKeys,
       featureKeys: product.featureKeys,
+      dimensions: buildProductDimensions(product.specifications),
       specifications: {
         ...(product.specifications || {}),
+        ...buildProductDimensions(product.specifications),
+        ...(material ? { material: material._id } : {}),
+        ...(manufacturer ? { manufacturer: manufacturer._id } : {}),
         materialKey: product.materialKeys?.[0] || "",
         materialKeys: product.materialKeys || [],
         materials: (product.materialKeys || []).map((key) => ({ key, label: key.replace(/_/g, " ") })),
@@ -1391,9 +1469,10 @@ async function main() {
   const { admin, created: createdAdmin } = await resolveChatAdmin(passwordHash);
 
   await seedCategories();
+  const referenceDictionaries = await seedReferenceDictionaries();
   const [locations, products, users] = await Promise.all([
     seedLocations(),
-    seedProducts(),
+    seedProducts(referenceDictionaries),
     seedUsers(passwordHash),
   ]);
   await syncDemoTranslations();

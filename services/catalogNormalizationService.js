@@ -61,11 +61,33 @@ export const normalizeMaterialKeys = (values = []) =>
     )
   );
 
+const normalizeProductDimensions = (productDoc = {}) => {
+  const rawDimensions =
+    productDoc?.dimensions && typeof productDoc.dimensions === "object" ? productDoc.dimensions : {};
+  const legacySpecifications =
+    productDoc?.specifications && typeof productDoc.specifications === "object"
+      ? productDoc.specifications
+      : {};
+
+  const dimensions = {
+    widthCm: rawDimensions.widthCm ?? legacySpecifications.widthCm ?? null,
+    depthCm: rawDimensions.depthCm ?? legacySpecifications.depthCm ?? null,
+    heightCm: rawDimensions.heightCm ?? legacySpecifications.heightCm ?? null,
+    lengthCm: rawDimensions.lengthCm ?? legacySpecifications.lengthCm ?? null,
+    diameterCm: rawDimensions.diameterCm ?? legacySpecifications.diameterCm ?? null,
+  };
+
+  return Object.fromEntries(
+    Object.entries(dimensions).filter(([, value]) => Number.isFinite(value))
+  );
+};
+
 export const extractProductMaterialKeys = (productDoc = {}) => {
   const specifications = productDoc?.specifications || {};
   const materialKeys = [];
 
   if (specifications.materialKey) materialKeys.push(specifications.materialKey);
+  if (specifications.material?.key) materialKeys.push(specifications.material.key);
   if (Array.isArray(specifications.materialKeys)) materialKeys.push(...specifications.materialKeys);
 
   if (Array.isArray(specifications.materials)) {
@@ -115,6 +137,7 @@ export const normalizeProductCatalogPayload = (productDoc = {}) => ({
     (typeof productDoc?.previewImage === "string" && productDoc.previewImage.trim()) ||
     (Array.isArray(productDoc?.images) ? productDoc.images.find((item) => String(item || "").trim()) || "" : ""),
   modelUrl: typeof productDoc?.modelUrl === "string" ? productDoc.modelUrl : "",
+  dimensions: normalizeProductDimensions(productDoc),
   colorKeys: normalizeProductColorKeys(productDoc),
   colors: normalizeProductColors(productDoc?.colors),
   roomKeys: normalizeRoomKeys(productDoc?.roomKeys || []),

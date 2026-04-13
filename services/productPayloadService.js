@@ -118,6 +118,60 @@ const parseObjectField = (value, fieldName) => {
   return parsed;
 };
 
+const DIMENSION_KEYS = ["widthCm", "depthCm", "heightCm", "lengthCm", "diameterCm"];
+
+const normalizeDimensionsObject = (value, fieldName = "dimensions") => {
+  if (value === undefined) return undefined;
+
+  const parsed = parseObjectField(value, fieldName);
+  const normalized = {};
+
+  DIMENSION_KEYS.forEach((key) => {
+    if (!hasOwn(parsed, key)) return;
+    const nextValue = parseNumberField(parsed[key], `${fieldName}.${key}`, { min: 0 });
+    if (nextValue !== undefined) normalized[key] = nextValue;
+  });
+
+  return normalized;
+};
+
+const pickLegacyDimensions = (source = {}) => {
+  const dimensions = {};
+
+  DIMENSION_KEYS.forEach((key) => {
+    if (!hasOwn(source, key)) return;
+    const nextValue = parseNumberField(source[key], key, { min: 0 });
+    if (nextValue !== undefined) dimensions[key] = nextValue;
+  });
+
+  return Object.keys(dimensions).length ? dimensions : undefined;
+};
+
+const extractDimensionKeysFromSpecifications = (specifications = {}) =>
+  DIMENSION_KEYS.reduce((acc, key) => {
+    const value = parseNumberField(specifications?.[key], `specifications.${key}`, { min: 0 });
+    if (value !== undefined) acc[key] = value;
+    return acc;
+  }, {});
+
+const pickFiniteDimensions = (dimensions = {}) =>
+  DIMENSION_KEYS.reduce((acc, key) => {
+    const value = dimensions?.[key];
+    if (Number.isFinite(value)) acc[key] = value;
+    return acc;
+  }, {});
+
+const syncDimensionsIntoSpecifications = (specifications = {}, dimensions = {}) => {
+  const nextSpecifications = isPlainObject(specifications) ? { ...specifications } : {};
+
+  DIMENSION_KEYS.forEach((key) => {
+    if (dimensions?.[key] === undefined) return;
+    nextSpecifications[key] = dimensions[key];
+  });
+
+  return nextSpecifications;
+};
+
 const resolveLocalizedText = ({
   body,
   fieldName,
@@ -297,9 +351,77 @@ export const buildProductMutationPayload = ({
   if (featureKeys !== undefined) payload.featureKeys = featureKeys;
   else if (isCreate) payload.featureKeys = [];
 
-  const specifications = parseObjectField(body.specifications, "specifications");
-  if (specifications !== undefined) payload.specifications = specifications;
-  else if (isCreate) payload.specifications = {};
+  const ipRating = hasOwn(body, "ipRating")
+    ? parseStringField(body.ipRating, "ipRating")
+    : undefined;
+
+  let specifications = parseObjectField(body.specifications, "specifications");
+  const materialId = hasOwn(body, "materialId")
+    ? parseStringField(body.materialId, "materialId", { strict: true })
+    : undefined;
+  const manufacturerId = hasOwn(body, "manufacturerId")
+    ? parseStringField(body.manufacturerId, "manufacturerId", { strict: true })
+    : undefined;
+
+  if (materialId !== undefined || manufacturerId !== undefined) {
+    specifications = {
+      ...(specifications || {}),
+      ...(materialId ? { material: materialId } : {}),
+      ...(manufacturerId ? { manufacturer: manufacturerId } : {}),
+    };
+  }
+
+  if (ipRating !== undefined) {
+    specifications = { ...(specifications || {}), ipRating };
+  }
+  if (partial && specifications !== undefined) {
+    specifications = {
+      ...(isPlainObject(existingProduct?.specifications) ? existingProduct.specifications : {}),
+      ...specifications,
+    };
+  }
+
+  const dimensionsFromBody = normalizeDimensionsObject(body.dimensions, "dimensions");
+  const dimensionsFromLegacyBody = pickLegacyDimensions(body);
+  const dimensionsFromExistingProduct = pickFiniteDimensions(existingProduct?.dimensions);
+
+  const nextDimensions =
+    dimensionsFromBody !== undefined
+      ? {
+          ...dimensionsFromExistingProduct,
+          ...extractDimensionKeysFromSpecifications(specifications || {}),
+          ...dimensionsFromBody,
+        }
+      : dimensionsFromLegacyBody !== undefined
+        ? {
+            ...dimensionsFromExistingProduct,
+            ...extractDimensionKeysFromSpecifications(specifications || {}),
+            ...dimensionsFromLegacyBody,
+          }
+        : specifications !== undefined
+          ? {
+              ...dimensionsFromExistingProduct,
+              ...extractDimensionKeysFromSpecifications(specifications),
+            }
+          : undefined;
+
+  if (nextDimensions !== undefined) payload.dimensions = nextDimensions;
+  else if (isCreate) payload.dimensions = {};
+
+  if (specifications !== undefined) {
+    payload.specifications =
+      nextDimensions !== undefined
+        ? syncDimensionsIntoSpecifications(specifications, nextDimensions)
+        : specifications;
+  } else if (isCreate) {
+    payload.specifications =
+      nextDimensions !== undefined ? syncDimensionsIntoSpecifications({}, nextDimensions) : {};
+  } else if (nextDimensions !== undefined) {
+    payload.specifications = syncDimensionsIntoSpecifications(
+      existingProduct?.specifications,
+      nextDimensions
+    );
+  }
 
   if (allowInventoryFields) {
     if (hasOwn(body, "inStock") || isCreate) {

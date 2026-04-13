@@ -10,6 +10,10 @@ import {
 } from "../services/catalogNormalizationService.js";
 import { attachColorReferencesToProducts } from "../services/productColorReferenceService.js";
 import {
+  attachReferenceDictionariesToProducts,
+  resolveProductSpecificationReferences,
+} from "../services/productReferenceService.js";
+import {
   buildProductMutationPayload,
   createHttpError,
 } from "../services/productPayloadService.js";
@@ -289,7 +293,9 @@ export const getProducts = async (req, res, next) => {
     ];
 
     const list = await Product.aggregate(pipeline);
-    const hydrated = await attachColorReferencesToProducts(list);
+    const hydrated = await attachReferenceDictionariesToProducts(
+      await attachColorReferencesToProducts(list)
+    );
 
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");
     res.json(hydrated.map((item) => normalizeProductCatalogPayload(item)));
@@ -399,7 +405,9 @@ export const getProductBySlug = async (req, res, next) => {
     const product = await Product.findOne({ slug }).lean();
     if (!product) throw createHttpError(404, "Товар не знайдено");
 
-    const hydrated = await attachColorReferencesToProducts(product);
+    const hydrated = await attachReferenceDictionariesToProducts(
+      await attachColorReferencesToProducts(product)
+    );
     res.json(normalizeProductCatalogPayload(hydrated));
   } catch (err) {
     forwardControllerError(err, next, "getProductBySlug", "Помилка сервера");
@@ -413,7 +421,9 @@ export const getProductById = async (req, res, next) => {
     const product = await Product.findById(req.params.id).lean();
     if (!product) throw createHttpError(404, "Товар не знайдено");
 
-    const hydrated = await attachColorReferencesToProducts(product);
+    const hydrated = await attachReferenceDictionariesToProducts(
+      await attachColorReferencesToProducts(product)
+    );
     res.json(normalizeProductCatalogPayload(hydrated));
   } catch (err) {
     forwardControllerError(err, next, "getProductById", "Помилка сервера");
@@ -422,14 +432,19 @@ export const getProductById = async (req, res, next) => {
 
 export const createProduct = async (req, res, next) => {
   try {
-    const payload = buildProductMutationPayload({
-      body: req.body,
-      partial: false,
-      allowInventoryFields: false,
-    });
+    const payload = await resolveProductSpecificationReferences(
+      buildProductMutationPayload({
+        body: req.body,
+        partial: false,
+        allowInventoryFields: false,
+      }),
+      { sourceBody: req.body }
+    );
 
     const product = await Product.create(payload);
-    const hydrated = await attachColorReferencesToProducts(product.toObject());
+    const hydrated = await attachReferenceDictionariesToProducts(
+      await attachColorReferencesToProducts(product.toObject())
+    );
     res.status(201).json(normalizeProductCatalogPayload(hydrated));
   } catch (err) {
     if (err?.code === 11000) {
@@ -447,12 +462,15 @@ export const updateProduct = async (req, res, next) => {
     const product = await Product.findById(req.params.id);
     if (!product) throw createHttpError(404, "Не знайдено");
 
-    const updateData = buildProductMutationPayload({
-      body: req.body,
-      existingProduct: product.toObject(),
-      partial: true,
-      allowInventoryFields: false,
-    });
+    const updateData = await resolveProductSpecificationReferences(
+      buildProductMutationPayload({
+        body: req.body,
+        existingProduct: product.toObject(),
+        partial: true,
+        allowInventoryFields: false,
+      }),
+      { sourceBody: req.body }
+    );
 
     const updated = await Product.findByIdAndUpdate(
       req.params.id,
@@ -460,7 +478,9 @@ export const updateProduct = async (req, res, next) => {
       { new: true, runValidators: true }
     );
 
-    const hydrated = await attachColorReferencesToProducts(updated.toObject());
+    const hydrated = await attachReferenceDictionariesToProducts(
+      await attachColorReferencesToProducts(updated.toObject())
+    );
     res.json(normalizeProductCatalogPayload(hydrated));
   } catch (err) {
     if (err?.code === 11000) {

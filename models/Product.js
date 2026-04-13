@@ -1,6 +1,25 @@
 // server/models/Product.js
 import mongoose from "mongoose";
 
+const ProductDimensionsSchema = new mongoose.Schema(
+  {
+    widthCm: { type: Number, min: 0, default: null },
+    depthCm: { type: Number, min: 0, default: null },
+    heightCm: { type: Number, min: 0, default: null },
+    lengthCm: { type: Number, min: 0, default: null },
+    diameterCm: { type: Number, min: 0, default: null },
+  },
+  { _id: false }
+);
+
+const ProductSpecificationsSchema = new mongoose.Schema(
+  {
+    material: { type: mongoose.Schema.Types.ObjectId, ref: "Material", default: null },
+    manufacturer: { type: mongoose.Schema.Types.ObjectId, ref: "Manufacturer", default: null },
+  },
+  { _id: false, strict: false }
+);
+
 const productSchema = new mongoose.Schema(
   {
     name: { ua: { type: String, required: true }, en: { type: String, required: true } },
@@ -22,8 +41,14 @@ const productSchema = new mongoose.Schema(
     collectionKeys: { type: [String], default: [] },
     featureKeys: { type: [String], default: [] },
 
-    // ✅ ДИНАМІЧНІ характеристики:
-    specifications: { type: mongoose.Schema.Types.Mixed, default: {} },
+    // Стандартизовані габарити для меблів та інших фізичних товарів.
+    dimensions: { type: ProductDimensionsSchema, default: () => ({}) },
+
+    // Динамічні професійні характеристики залежно від typeKey:
+    // sofa -> seats, sleepingArea, mechanismKey
+    // lighting -> bulbBase, wattage, lightTemperatureK, ipRating
+    // wardrobe -> doorCount, shelfCount
+    specifications: { type: ProductSpecificationsSchema, default: () => ({}) },
 
     price: { type: Number, required: true, min: 0, index: true },
     discount: { type: Number, default: 0, min: 0, max: 100 },

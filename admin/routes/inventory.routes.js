@@ -5,6 +5,7 @@ import {
   getByProduct,
   getMovements,
   getOverview,
+  remove,
   transfer,
   upsert,
 } from "../../controllers/inventoryController.js";
@@ -15,6 +16,7 @@ router.get("/inventory/overview", getOverview);
 router.get("/inventory/location/:locationId", getByLocation);
 router.get("/inventory/product/:productId", getByProduct);
 router.patch("/inventory", upsert);
+router.delete("/inventory/:id", remove);
 router.post("/inventory/transfer", transfer);
 router.get("/inventory/movements", getMovements);
 
