@@ -91,6 +91,66 @@ const GENERIC_PRODUCT_TERMS = [
   "мебель",
 ];
 
+const SEARCH_STOP_WORDS = new Set([
+  "для",
+  "типу",
+  "та",
+  "або",
+  "і",
+  "й",
+  "на",
+  "по",
+  "of",
+  "the",
+  "and",
+  "or",
+]);
+
+const QUERY_INTENT_HINTS = [
+  {
+    key: "outdoor",
+    aliases: [
+      "outdoor",
+      "garden",
+      "garden furniture",
+      "outdoor furniture",
+      "patio",
+      "terrace",
+      "balcony",
+      "open air",
+      "outside",
+      "picnic",
+      "пікнік",
+      "пікніка",
+      "пікніку",
+      "пікніков",
+      "садов",
+      "садова",
+      "садові",
+      "садовий",
+      "садове",
+      "садова меблі",
+      "садові меблі",
+      "вуличн",
+      "вулична",
+      "вуличні",
+      "вуличний",
+    ],
+    positiveTerms: [
+      "outdoor",
+      "garden",
+      "picnic",
+      "patio",
+      "terrace",
+      "balcony",
+      "садов",
+      "пікнік",
+      "вуличн",
+    ],
+    negativeTerms: ["office", "desk", "home office", "письмов", "робоч", "computer"],
+  },
+];
+
 const COLOR_QUERY_HINTS = [
   {
     pattern: /(pink|розов|рожев|rose|fuchsia|hot ?pink|light ?pink|deep ?pink|misty ?rose)/i,
@@ -131,7 +191,7 @@ const COLOR_QUERY_HINTS = [
 ];
 
 const BUILD_FIELDS =
-  "_id slug name category subCategory typeKey price discount inStock stockQty status images previewImage colorKeys updatedAt";
+  "_id slug name description category subCategory typeKey price discount inStock stockQty status images previewImage colorKeys roomKeys collectionKeys featureKeys updatedAt";
 
 const formatMoneyUa = (value) =>
   new Intl.NumberFormat("uk-UA", {
@@ -176,7 +236,104 @@ const collectTextTokens = (query = "") =>
   normalizeText(query)
     .split(" ")
     .map((token) => token.trim())
-    .filter((token) => token && token.length > 2 && !GENERIC_PRODUCT_TERMS.includes(token));
+    .filter(
+      (token) =>
+        token &&
+        token.length > 2 &&
+        !GENERIC_PRODUCT_TERMS.includes(token) &&
+        !SEARCH_STOP_WORDS.has(token)
+    );
+
+const buildTokenVariants = (token = "") => {
+  const normalized = normalizeText(token);
+  if (!normalized) return [];
+
+  const variants = new Set([normalized]);
+  if (normalized.length <= 4) {
+    return Array.from(variants);
+  }
+
+  const suffixes = [
+    "ами",
+    "ями",
+    "ого",
+    "ому",
+    "ими",
+    "ої",
+    "ий",
+    "ій",
+    "а",
+    "я",
+    "у",
+    "ю",
+    "і",
+    "и",
+    "ом",
+    "ем",
+    "ов",
+    "ев",
+    "ів",
+    "їв",
+    "ь",
+  ];
+
+  for (const suffix of suffixes) {
+    if (normalized.endsWith(suffix) && normalized.length > suffix.length + 1) {
+      variants.add(normalized.slice(0, -suffix.length));
+    }
+  }
+
+  return Array.from(variants).filter((value) => value.length > 2);
+};
+
+const buildSearchTokens = (query = "") =>
+  Array.from(
+    new Set(
+      collectTextTokens(query).flatMap((token) => buildTokenVariants(token))
+    )
+  ).filter((token) => token.length > 2);
+
+const detectQueryIntentKeys = (query = "") => {
+  const normalizedQuery = normalizeText(query);
+  if (!normalizedQuery) return [];
+
+  const intentKeys = new Set();
+
+  for (const intent of QUERY_INTENT_HINTS) {
+    if (intent.aliases.some((alias) => normalizedQuery.includes(normalizeText(alias)))) {
+      intentKeys.add(intent.key);
+    }
+  }
+
+  return Array.from(intentKeys);
+};
+
+const buildProductSearchText = (product = {}) =>
+  normalizeText(
+    [
+      getProductName(product),
+      pickStr(product?.slug),
+      pickStr(product?.category),
+      pickStr(product?.subCategory),
+      pickStr(product?.typeKey),
+      pickStr(product?.description?.ua),
+      pickStr(product?.description?.en),
+      ...(Array.isArray(product?.roomKeys) ? product.roomKeys.map((key) => pickStr(key)) : []),
+      ...(Array.isArray(product?.collectionKeys)
+        ? product.collectionKeys.map((key) => pickStr(key))
+        : []),
+      ...(Array.isArray(product?.featureKeys) ? product.featureKeys.map((key) => pickStr(key)) : []),
+      ...(Array.isArray(product?.colors)
+        ? product.colors.flatMap((color) => [
+            pickStr(color?.name?.ua),
+            pickStr(color?.name?.en),
+            pickStr(color?.key),
+          ])
+        : []),
+    ]
+      .filter(Boolean)
+      .join(" ")
+  );
 
 const detectProductCategories = (query = "", explicitCategory = "") => {
   const normalizedQuery = normalizeText(query);
@@ -277,46 +434,36 @@ const composeAndFilter = (...clauses) => {
 };
 
 const buildTextClause = (query = "") => {
-  const normalizedQuery = pickStr(query);
-  const tokens = collectTextTokens(normalizedQuery);
-  if (!normalizedQuery || !tokens.length) return null;
+  const searchTokens = buildSearchTokens(query);
+  if (!searchTokens.length) return null;
 
-  const regex = new RegExp(escapeRegex(normalizedQuery), "i");
+  const textFields = [
+    "name.ua",
+    "name.en",
+    "slug",
+    "category",
+    "subCategory",
+    "typeKey",
+    "description.ua",
+    "description.en",
+  ];
+
   return {
-    $or: [
-      { "name.ua": regex },
-      { "name.en": regex },
-      { slug: regex },
-      { category: regex },
-      { subCategory: regex },
-      { typeKey: regex },
-      { "description.ua": regex },
-      { "description.en": regex },
-    ],
+    $or: searchTokens.flatMap((token) => {
+      const regex = new RegExp(escapeRegex(token), "i");
+      return textFields.map((field) => ({ [field]: regex }));
+    }),
   };
 };
 
-const scoreProduct = (product = {}, { categoryKeys = [], colorKeys = [], query = "", minPrice, maxPrice } = {}) => {
+const scoreProduct = (
+  product = {},
+  { categoryKeys = [], colorKeys = [], query = "", minPrice, maxPrice } = {}
+) => {
   const normalizedQuery = normalizeText(query);
   const tokens = collectTextTokens(normalizedQuery);
-  const productTokens = normalizeText(
-    [
-      getProductName(product),
-      pickStr(product?.slug),
-      pickStr(product?.category),
-      pickStr(product?.subCategory),
-      pickStr(product?.typeKey),
-      ...(Array.isArray(product?.colors)
-        ? product.colors.flatMap((color) => [
-            pickStr(color?.name?.ua),
-            pickStr(color?.name?.en),
-            pickStr(color?.key),
-          ])
-        : []),
-    ]
-      .filter(Boolean)
-      .join(" ")
-  );
+  const productTokens = buildProductSearchText(product);
+  const queryIntentKeys = detectQueryIntentKeys(query);
 
   const productColorKeys = getColorKeys(product);
   const matchedColorKeys = colorKeys.filter((key) => productColorKeys.includes(key));
@@ -335,8 +482,28 @@ const scoreProduct = (product = {}, { categoryKeys = [], colorKeys = [], query =
   }
 
   if (tokens.length) {
-    const matchedTokens = tokens.filter((token) => productTokens.includes(token));
-    score += matchedTokens.length * 8;
+    const matchedTokens = tokens.filter((token) =>
+      buildTokenVariants(token).some((variant) => productTokens.includes(variant))
+    );
+    score += matchedTokens.length * 10;
+  }
+
+  if (queryIntentKeys.includes("outdoor")) {
+    if (
+      QUERY_INTENT_HINTS[0].positiveTerms.some((term) =>
+        productTokens.includes(normalizeText(term))
+      )
+    ) {
+      score += 30;
+    }
+
+    if (
+      QUERY_INTENT_HINTS[0].negativeTerms.some((term) =>
+        productTokens.includes(normalizeText(term))
+      )
+    ) {
+      score -= 18;
+    }
   }
 
   if (Number.isFinite(minPrice) || Number.isFinite(maxPrice)) {
@@ -357,6 +524,22 @@ const scoreProduct = (product = {}, { categoryKeys = [], colorKeys = [], query =
   };
 };
 
+export const rankCatalogProducts = (products = [], options = {}) =>
+  (Array.isArray(products) ? products : [])
+    .filter(Boolean)
+    .map((product) => {
+      const { score, matchedColorKeys } = scoreProduct(product, options);
+      return {
+        ...product,
+        matchScore: score,
+        matchedColorKeys,
+      };
+    })
+    .sort((left, right) => {
+      if (right.matchScore !== left.matchScore) return right.matchScore - left.matchScore;
+      return new Date(right.updatedAt || 0).getTime() - new Date(left.updatedAt || 0).getTime();
+    });
+
 const toProductSummary = (product = {}) => ({
   id: String(product._id || product.id || ""),
   slug: pickStr(product.slug),
@@ -364,6 +547,9 @@ const toProductSummary = (product = {}) => ({
   category: pickStr(product.category),
   subCategory: pickStr(product.subCategory),
   typeKey: pickStr(product.typeKey),
+  roomKeys: Array.isArray(product.roomKeys) ? product.roomKeys : [],
+  collectionKeys: Array.isArray(product.collectionKeys) ? product.collectionKeys : [],
+  featureKeys: Array.isArray(product.featureKeys) ? product.featureKeys : [],
   price: Number(product.price || 0),
   discount: Number(product.discount || 0),
   finalPrice: toFinalPrice(product),
@@ -384,6 +570,7 @@ const buildCandidateFilters = ({
   query,
   categoryKeys = [],
   colorKeys = [],
+  intentKeys = [],
   minPrice,
   maxPrice,
 }) => {
@@ -409,8 +596,27 @@ const buildCandidateFilters = ({
 
   const categoryClause = categoryKeys.length ? { category: { $in: categoryKeys } } : null;
   const colorClause = colorKeys.length ? { colorKeys: { $in: colorKeys } } : null;
+  const intentClause = intentKeys.length
+    ? {
+        $or: [
+          { roomKeys: { $in: intentKeys } },
+          { collectionKeys: { $in: intentKeys } },
+          { featureKeys: { $in: intentKeys } },
+        ],
+      }
+    : null;
 
   const variants = [];
+
+  if (categoryClause && colorClause && intentClause && textClause) {
+    variants.push(
+      composeAndFilter({ status: "active" }, categoryClause, colorClause, intentClause, priceClause, textClause)
+    );
+  }
+
+  if (categoryClause && intentClause && textClause) {
+    variants.push(composeAndFilter({ status: "active" }, categoryClause, intentClause, priceClause, textClause));
+  }
 
   if (categoryClause && colorClause && textClause) {
     variants.push(composeAndFilter({ status: "active" }, categoryClause, colorClause, priceClause, textClause));
@@ -420,12 +626,28 @@ const buildCandidateFilters = ({
     variants.push(composeAndFilter({ status: "active" }, categoryClause, priceClause, textClause));
   }
 
+  if (categoryClause && colorClause && intentClause) {
+    variants.push(composeAndFilter({ status: "active" }, categoryClause, colorClause, intentClause, priceClause));
+  }
+
+  if (categoryClause && intentClause) {
+    variants.push(composeAndFilter({ status: "active" }, categoryClause, intentClause, priceClause));
+  }
+
   if (categoryClause && colorClause) {
     variants.push(composeAndFilter({ status: "active" }, categoryClause, colorClause, priceClause));
   }
 
   if (categoryClause) {
     variants.push(composeAndFilter({ status: "active" }, categoryClause, priceClause));
+  }
+
+  if (intentClause && textClause) {
+    variants.push(composeAndFilter({ status: "active" }, intentClause, priceClause, textClause));
+  }
+
+  if (intentClause) {
+    variants.push(composeAndFilter({ status: "active" }, intentClause, priceClause));
   }
 
   if (colorClause && textClause) {
@@ -446,13 +668,23 @@ const buildCandidateFilters = ({
   return variants;
 };
 
-const fetchCandidateProducts = async ({ query, categoryKeys, colorKeys, minPrice, maxPrice, limit }) => {
+const fetchCandidateProducts = async ({
+  query,
+  categoryKeys,
+  colorKeys,
+  intentKeys,
+  minPrice,
+  maxPrice,
+  limit,
+}) => {
   const safeLimit = Math.max(1, Math.min(10, Number(limit) || 5));
+  const candidateFetchLimit = Math.max(safeLimit * 8, 20);
   const uniqueProducts = new Map();
   const variants = buildCandidateFilters({
     query,
     categoryKeys,
     colorKeys,
+    intentKeys,
     minPrice,
     maxPrice,
   });
@@ -461,7 +693,7 @@ const fetchCandidateProducts = async ({ query, categoryKeys, colorKeys, minPrice
     const rows = await Product.find(filter)
       .select(BUILD_FIELDS)
       .sort({ updatedAt: -1, createdAt: -1 })
-      .limit(safeLimit * 4)
+      .limit(candidateFetchLimit)
       .lean();
 
     rows.forEach((row) => {
@@ -470,8 +702,7 @@ const fetchCandidateProducts = async ({ query, categoryKeys, colorKeys, minPrice
       uniqueProducts.set(id, row);
     });
 
-    if (uniqueProducts.size >= safeLimit * 8) break;
-    if (rows.length >= safeLimit) break;
+    if (uniqueProducts.size >= candidateFetchLimit) break;
   }
 
   return Array.from(uniqueProducts.values());
@@ -486,6 +717,7 @@ export const isCatalogProductQuery = (query = "") => {
   if (GENERIC_PRODUCT_TERMS.some((term) => normalized.includes(normalizeText(term)))) return true;
   if (detectProductCategories(normalized).length) return true;
   if (detectColorHintsFromQuery(normalized).length) return true;
+  if (detectQueryIntentKeys(normalized).length) return true;
 
   return false;
 };
@@ -506,6 +738,7 @@ export const searchCatalogProducts = async ({
   const detectedColorKeys = Array.from(
     new Set([...explicitColorKeys, ...queryColorKeys].map((key) => pickStr(key).toLowerCase()).filter(Boolean))
   );
+  const detectedIntentKeys = detectQueryIntentKeys(normalizedQuery);
 
   const parsedBudget = parseBudgetFromQuery(normalizedQuery);
   const resolvedMinPrice =
@@ -522,31 +755,19 @@ export const searchCatalogProducts = async ({
     query: normalizedQuery,
     categoryKeys: detectedCategories,
     colorKeys: detectedColorKeys,
+    intentKeys: detectedIntentKeys,
     minPrice: resolvedMinPrice,
     maxPrice: resolvedMaxPrice,
     limit,
   });
 
-  const scoredProducts = candidateProducts
-    .map((product) => {
-      const { score, matchedColorKeys } = scoreProduct(product, {
-        categoryKeys: detectedCategories,
-        colorKeys: detectedColorKeys,
-        query: normalizedQuery,
-        minPrice: resolvedMinPrice,
-        maxPrice: resolvedMaxPrice,
-      });
-
-      return {
-        ...product,
-        matchScore: score,
-        matchedColorKeys,
-      };
-    })
-    .sort((left, right) => {
-      if (right.matchScore !== left.matchScore) return right.matchScore - left.matchScore;
-      return new Date(right.updatedAt || 0).getTime() - new Date(left.updatedAt || 0).getTime();
-    });
+  const scoredProducts = rankCatalogProducts(candidateProducts, {
+    categoryKeys: detectedCategories,
+    colorKeys: detectedColorKeys,
+    query: normalizedQuery,
+    minPrice: resolvedMinPrice,
+    maxPrice: resolvedMaxPrice,
+  });
 
   const topProducts = scoredProducts.slice(0, Math.max(1, Math.min(10, Number(limit) || 5)));
   const withColors = await attachColorReferencesToProducts(topProducts);

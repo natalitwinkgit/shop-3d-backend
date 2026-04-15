@@ -7,6 +7,23 @@ export const ROOM_KEY_ALIASES = {
   dining_room: ["dining_room", "dining-room", "diningroom"],
   hallway: ["hallway", "hall", "entryway"],
   kitchen: ["kitchen"],
+  outdoor: [
+    "outdoor",
+    "outdoors",
+    "garden",
+    "garden_furniture",
+    "garden-furniture",
+    "picnic",
+    "picnic_table",
+    "picnic-table",
+    "patio",
+    "terrace",
+    "balcony",
+    "veranda",
+    "courtyard",
+    "summer_garden",
+    "summer-garden",
+  ],
 };
 
 const roomAliasLookup = new Map(
