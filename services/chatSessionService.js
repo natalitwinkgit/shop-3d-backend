@@ -139,6 +139,9 @@ export const createGuestChatSession = async ({ guestName = "" } = {}) => {
       adminId: supportAdmin.adminId,
       adminName: supportAdmin.adminName || "Admin",
       isAiAssistant: !!supportAdmin.isAiAssistant,
+      presence: supportAdmin.presence || "offline",
+      isOnline: !!supportAdmin.isOnline,
+      adminEmail: supportAdmin.adminEmail || "",
     },
   };
 };

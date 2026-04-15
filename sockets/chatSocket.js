@@ -107,6 +107,9 @@ export const createSocketServer = (server) => {
     socket.on("join_chat", () => {
       joinOwnRoom();
     });
+    socket.on("chat:live:join", () => {
+      joinOwnRoom();
+    });
     socket.on("message:send", async (payload) => {
       await handleSendMessage(payload);
     });

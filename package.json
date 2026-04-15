@@ -32,8 +32,9 @@
     "multer": "^2.0.2",
     "openai": "^6.33.0",
     "pino": "^10.1.0",
-    "socket.io": "^4.8.3"
-    ,"zod": "^4.1.12"
+    "redis": "^5.12.0",
+    "socket.io": "^4.8.3",
+    "zod": "^4.1.12"
   },
   "devDependencies": {
     "supertest": "^7.1.4"

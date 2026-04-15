@@ -1,5 +1,6 @@
 import Message from "../models/Message.js";
 import User, { ADMIN_ROLES, isAdminRole } from "../models/userModel.js";
+import { getPresenceStatus } from "./userProfileService.js";
 
 export const isObjectIdLike = (value) => /^[a-f0-9]{24}$/i.test(String(value || ""));
 
@@ -233,11 +234,14 @@ export const buildAdminConversationSummaries = async () => {
 export const getSupportAdminProfile = async ({ currentUser } = {}) => {
   const currentAdminId = String(currentUser?._id || currentUser?.id || "");
   if (isAdminRole(currentUser?.role) && currentAdminId) {
+    const presence = currentUser?.isAiAssistant ? "online" : getPresenceStatus(currentUser);
     return {
       adminId: currentAdminId,
       adminName: currentUser.name || currentUser.email || "Admin",
       adminEmail: currentUser.email || "",
       isAiAssistant: !!currentUser.isAiAssistant,
+      presence,
+      isOnline: presence !== "offline",
     };
   }
 
@@ -251,13 +255,18 @@ export const getSupportAdminProfile = async ({ currentUser } = {}) => {
   candidates.push({ role: { $in: ADMIN_ROLES } });
 
   for (const query of candidates) {
-    const adminUser = await User.findOne(query).select("_id name email isAiAssistant").lean();
+    const adminUser = await User.findOne(query)
+      .select("_id name email isAiAssistant isOnline presence lastActivityAt lastHeartbeatAt lastSeen")
+      .lean();
     if (adminUser) {
+      const presence = adminUser.isAiAssistant ? "online" : getPresenceStatus(adminUser);
       return {
         adminId: String(adminUser._id),
         adminName: adminUser.name || adminUser.email || "Admin",
         adminEmail: adminUser.email || "",
         isAiAssistant: !!adminUser.isAiAssistant,
+        presence,
+        isOnline: presence !== "offline",
       };
     }
   }

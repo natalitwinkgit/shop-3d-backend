@@ -154,7 +154,13 @@ export const adminChatApi = {
   },
 
   getSupportAdmin(token: string, baseUrl = "") {
-    return request<{ adminId: string; adminName?: string }>("/api/admin/chat/support-admin", {
+    return request<{
+      adminId: string;
+      adminName?: string;
+      adminEmail?: string;
+      presence?: "online" | "away" | "offline" | string;
+      isOnline?: boolean;
+    }>("/api/admin/chat/support-admin", {
       token,
       baseUrl,
     });

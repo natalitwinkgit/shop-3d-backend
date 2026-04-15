@@ -32,6 +32,29 @@ export const emitChatMessage = (messageDoc) => {
   return payload;
 };
 
+export const emitChatLiveStatus = ({
+  participants = [],
+  conversationId = "",
+  state = "idle",
+  mode = "live",
+  meta = null,
+} = {}) => {
+  if (!chatEmitter) return;
+
+  const payload = {
+    conversationId: String(conversationId || ""),
+    state: String(state || "idle"),
+    mode: String(mode || "live"),
+    meta: meta || null,
+    at: new Date().toISOString(),
+  };
+
+  const rooms = Array.from(new Set((participants || []).map((id) => String(id || "").trim()).filter(Boolean)));
+  for (const room of rooms) {
+    chatEmitter.to(room).emit("chat:live:status", payload);
+  }
+};
+
 export const createChatMessage = async ({
   sender,
   receiver,

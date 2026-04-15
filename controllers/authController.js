@@ -2,7 +2,9 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { ERROR_CODES } from "../app/constants/errorCodes.js";
+import { buildRequestFingerprint } from "../app/lib/securityFingerprint.js";
 import { logger } from "../app/lib/logger.js";
+import { env } from "../config/env.js";
 import User, {
   getStoredPasswordHash,
   isValidPhone,
@@ -13,8 +15,13 @@ import {
   markUserOffline,
 } from "../services/userProfileService.js";
 
-const signToken = (userId) =>
-  jwt.sign({ id: userId }, process.env.JWT_SECRET, { expiresIn: "7d" });
+const signToken = (userId, req = null) => {
+  const payload = { id: userId };
+  if ((env.sessionBindingEnabled || env.sessionBindingMode !== "off") && req) {
+    payload.fp = buildRequestFingerprint(req);
+  }
+  return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "7d" });
+};
 
 const pickStr = (value) => String(value || "").trim();
 
@@ -85,7 +92,7 @@ export const registerUser = async (req, res) => {
     });
 
     return res.status(201).json({
-      token: signToken(user._id),
+      token: signToken(user._id, req),
       user: buildPublicUserResponse(user),
     });
   } catch (error) {
@@ -144,7 +151,7 @@ export const loginUser = async (req, res) => {
     const freshUser = await User.findById(user._id).select("-passwordHash -password");
 
     return res.status(200).json({
-      token: signToken(user._id),
+      token: signToken(user._id, req),
       user: buildPublicUserResponse(freshUser),
     });
   } catch (error) {
@@ -305,6 +312,11 @@ export const logoutUser = async (req, res) => {
     });
 
     if (!user) return sendError(res, 404, ERROR_CODES.NOT_FOUND, "User not found");
+
+    await User.updateOne(
+      { _id: req.user.id },
+      { $set: { lastLogoutAt: new Date(), lastSeen: new Date(), lastActivityAt: new Date() } }
+    );
 
     return res.status(200).json({
       ok: true,

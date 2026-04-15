@@ -4,11 +4,26 @@ const COLOR_PROJECTION = "key name hex rgb slug group isActive";
 
 const normalizeKey = (value) => String(value || "").trim();
 
+const getColorKeyValue = (value) => {
+  if (!value) return "";
+  if (typeof value === "object") {
+    return String(value.key || value.slug || value.id || "").trim();
+  }
+  return String(value).trim();
+};
+
 const getProductColorKeys = (product = {}) =>
   Array.from(
     new Set(
-      (Array.isArray(product?.colorKeys) ? product.colorKeys : [])
-        .map((key) => normalizeKey(key))
+      [
+        ...(Array.isArray(product?.colorKeys) ? product.colorKeys : []),
+        product?.colorKey,
+        product?.color,
+        product?.primaryColorKey,
+        product?.primaryColor?.key,
+        ...(Array.isArray(product?.colors) ? product.colors.map((color) => color?.key) : []),
+      ]
+        .map((key) => normalizeKey(getColorKeyValue(key)))
         .filter(Boolean)
     )
   );
@@ -45,10 +60,14 @@ export const attachColorReferencesToProducts = async (products = []) => {
 
   const hydrated = source.map((product) => {
     const productColorKeys = getProductColorKeys(product);
+    const primaryColor = productColorKeys.length ? colorMap.get(productColorKeys[0]) : null;
+    const colors = productColorKeys.map((key) => colorMap.get(key)).filter(Boolean);
     return {
       ...product,
       colorKeys: productColorKeys,
-      colors: productColorKeys.map((key) => colorMap.get(key)).filter(Boolean),
+      colors,
+      primaryColor: primaryColor || colors[0] || null,
+      color: primaryColor || colors[0] || null,
     };
   });
 

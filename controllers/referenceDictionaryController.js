@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 
+import Color from "../models/Color.js";
 import Manufacturer from "../models/Manufacturer.js";
 import Material from "../models/Material.js";
 import ProductCollection from "../models/ProductCollection.js";
@@ -7,10 +8,31 @@ import ProductRoom from "../models/ProductRoom.js";
 import ProductStyle from "../models/ProductStyle.js";
 import { createHttpError } from "../services/productPayloadService.js";
 
+function serializeColorAttribute(color = {}) {
+  return {
+    _id: String(color._id || ""),
+    id: String(color._id || ""),
+    kind: "color",
+    key: String(color.key || ""),
+    name: {
+      ua: String(color.name?.ua || color.name?.en || "").trim(),
+      en: String(color.name?.en || color.name?.ua || "").trim(),
+    },
+    hex: String(color.hex || "").trim(),
+    rgb: Array.isArray(color.rgb) ? color.rgb.map((component) => Number(component)) : [],
+    slug: String(color.slug || "").trim() || null,
+    group: String(color.group || "").trim() || null,
+    isActive: color.isActive !== false,
+    createdAt: color.createdAt || null,
+    updatedAt: color.updatedAt || null,
+  };
+}
+
 const PRODUCT_ATTRIBUTE_DICTIONARIES = [
   { kind: "room", responseField: "rooms", model: ProductRoom },
   { kind: "style", responseField: "styles", model: ProductStyle },
   { kind: "collection", responseField: "collections", model: ProductCollection },
+  { kind: "color", responseField: "colors", model: Color, serialize: serializeColorAttribute },
 ];
 
 const getProductAttributeConfig = (kind) =>
@@ -83,6 +105,128 @@ const parseLocalizedDescription = (value) => {
   };
 };
 
+const normalizeColorKey = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+const normalizeColorHex = (value) => {
+  if (typeof value !== "string") return "";
+  const cleaned = value.trim().replace(/^#/, "").toUpperCase();
+  if (/^[0-9A-F]{3}$/.test(cleaned)) {
+    return `#${cleaned[0]}${cleaned[0]}${cleaned[1]}${cleaned[1]}${cleaned[2]}${cleaned[2]}`;
+  }
+  if (/^[0-9A-F]{6}$/.test(cleaned)) {
+    return `#${cleaned}`;
+  }
+  return "";
+};
+
+const parseColorRgb = (value) => {
+  if (Array.isArray(value) && value.length === 3) {
+    const rgb = value.map((component) => Number(component));
+    if (rgb.every((component) => Number.isInteger(component) && component >= 0 && component <= 255)) {
+      return rgb;
+    }
+    return null;
+  }
+
+  if (typeof value !== "string") return null;
+
+  const normalized = value.trim();
+  const rgbMatch = normalized.match(
+    /rgb\s*\(\s*(\d{1,3})\s*[ ,]+(\d{1,3})\s*[ ,]+(\d{1,3})\s*\)/i
+  );
+  if (rgbMatch) {
+    const rgb = rgbMatch.slice(1, 4).map((component) => Number(component));
+    if (rgb.every((component) => Number.isInteger(component) && component >= 0 && component <= 255)) {
+      return rgb;
+    }
+    return null;
+  }
+
+  const parts = normalized.split(/[,;\s]+/).filter(Boolean);
+  if (parts.length === 3 && parts.every((part) => /^\d{1,3}$/.test(part))) {
+    const rgb = parts.map((component) => Number(component));
+    if (rgb.every((component) => Number.isInteger(component) && component >= 0 && component <= 255)) {
+      return rgb;
+    }
+  }
+
+  return null;
+};
+
+const parseOptionalString = (value) => {
+  const normalized = String(value ?? "").trim();
+  return normalized ? normalized : null;
+};
+
+const serializeColorDocument = (color = {}) => serializeColorAttribute(color);
+
+const buildColorMutationPayload = (body = {}, existingColor = null) => {
+  const payload = {};
+  const nameSource =
+    typeof body.name === "string"
+      ? body.name
+      : body.name?.en || body.name?.ua || body.slug || "";
+
+  if (body.key !== undefined || !existingColor) {
+    const key = normalizeColorKey(body.key || nameSource);
+    if (!key) throw createHttpError(400, "key is required");
+    payload.key = key;
+    if (body.slug === undefined && !existingColor) {
+      payload.slug = key;
+    }
+  } else if (body.slug === undefined && existingColor?.slug) {
+    payload.slug = existingColor.slug;
+  }
+
+  if (body.name !== undefined || !existingColor) {
+    payload.name = parseAttributeLocalizedName(body.name, payload.key || existingColor?.key || "", "name");
+  }
+
+  if (body.hex !== undefined || !existingColor) {
+    const hex = normalizeColorHex(body.hex || existingColor?.hex);
+    if (!hex) throw createHttpError(400, "hex is required and must be a valid HEX color");
+    payload.hex = hex;
+  }
+
+  if (body.rgb !== undefined || !existingColor) {
+    const rgb = parseColorRgb(body.rgb || existingColor?.rgb);
+    if (!rgb) throw createHttpError(400, "rgb is required and must be an array of three integers");
+    payload.rgb = rgb;
+  }
+
+  if (body.slug !== undefined) {
+    payload.slug = parseOptionalString(body.slug);
+  } else if (existingColor?.slug && !payload.slug) {
+    payload.slug = existingColor.slug;
+  }
+
+  if (body.group !== undefined) {
+    payload.group = parseOptionalString(body.group);
+  } else if (existingColor?.group && !payload.group) {
+    payload.group = existingColor.group;
+  }
+
+  if (body.isActive !== undefined) {
+    payload.isActive = parseBoolean(body.isActive, true);
+  }
+
+  if (body.key !== undefined && body.slug === undefined && !existingColor) {
+    payload.slug = payload.slug || payload.key;
+  }
+
+  if (body.key !== undefined && existingColor && body.slug === undefined) {
+    payload.slug = payload.slug || payload.key;
+  }
+
+  return payload;
+};
+
 const handleDuplicateKey = (error, next, entityName) => {
   if (error?.code === 11000) {
     return next(createHttpError(409, `${entityName} key must be unique`));
@@ -140,15 +284,21 @@ const serializeProductAttribute = (attribute = {}, kind = "") => ({
   updatedAt: attribute.updatedAt || null,
 });
 
+const serializeDictionaryItem = (item, config) =>
+  (config?.serialize || ((value) => serializeProductAttribute(value, config?.kind || "")))(item);
+
+const getDictionarySort = (config = {}) =>
+  config?.kind === "color" ? { key: 1 } : { sortOrder: 1, key: 1 };
+
 const listProductAttributesByKind = (kind, { activeOnly = true } = {}) => async (_req, res, next) => {
   try {
     const config = getProductAttributeConfig(kind);
     if (!config) throw createHttpError(404, "Product attribute dictionary not found");
 
     const items = await config.model.find(activeOnly ? { isActive: { $ne: false } } : {})
-      .sort({ sortOrder: 1, key: 1 })
+      .sort(getDictionarySort(config))
       .lean();
-    res.json(items.map((item) => serializeProductAttribute(item, kind)));
+    res.json(items.map((item) => serializeDictionaryItem(item, { ...config, kind })));
   } catch (error) {
     next(error);
   }
@@ -157,11 +307,12 @@ const listProductAttributesByKind = (kind, { activeOnly = true } = {}) => async 
 const getProductAttributeDictionariesByMode = ({ activeOnly = true } = {}) => async (_req, res, next) => {
   try {
     const entries = await Promise.all(
-      PRODUCT_ATTRIBUTE_DICTIONARIES.map(async ({ kind, responseField, model }) => {
+      PRODUCT_ATTRIBUTE_DICTIONARIES.map(async (config) => {
+        const { kind, responseField, model } = config;
         const items = await model.find(activeOnly ? { isActive: { $ne: false } } : {})
-          .sort({ sortOrder: 1, key: 1 })
+          .sort(getDictionarySort(config))
           .lean();
-        return [responseField, items.map((item) => serializeProductAttribute(item, kind))];
+        return [responseField, items.map((item) => serializeDictionaryItem(item, config))];
       })
     );
     const dictionaries = Object.fromEntries(entries);
@@ -272,6 +423,59 @@ export const getAdminProductCollectionAttributes = listProductAttributesByKind("
 export const createProductRoomAttribute = createProductAttributeForKind("room");
 export const createProductStyleAttribute = createProductAttributeForKind("style");
 export const createProductCollectionAttribute = createProductAttributeForKind("collection");
+
+export const getAdminColors = async (_req, res, next) => {
+  try {
+    const items = await Color.find({}).sort({ key: 1 }).lean();
+    res.json(items.map((item) => serializeColorDocument(item)));
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const createColor = async (req, res, next) => {
+  try {
+    const payload = buildColorMutationPayload(req.body);
+    const color = await Color.create(payload);
+    res.status(201).json(serializeColorDocument(color.toObject()));
+  } catch (error) {
+    handleDuplicateKey(error, next, "Color");
+  }
+};
+
+export const updateColor = async (req, res, next) => {
+  try {
+    const existingColor = await Color.findById(req.params.id);
+    if (!existingColor) throw createHttpError(404, "Color not found");
+
+    const payload = buildColorMutationPayload(req.body, existingColor.toObject());
+    const color = await Color.findByIdAndUpdate(req.params.id, payload, {
+      new: true,
+      runValidators: true,
+    });
+
+    if (!color) throw createHttpError(404, "Color not found");
+    res.json(serializeColorDocument(color.toObject()));
+  } catch (error) {
+    if (error?.name === "CastError") {
+      return next(createHttpError(400, "Color not found"));
+    }
+    handleDuplicateKey(error, next, "Color");
+  }
+};
+
+export const deleteColor = async (req, res, next) => {
+  try {
+    const color = await Color.findByIdAndDelete(req.params.id);
+    if (!color) throw createHttpError(404, "Color not found");
+    res.json({ ok: true, removed: { id: String(color._id), key: color.key } });
+  } catch (error) {
+    if (error?.name === "CastError") {
+      return next(createHttpError(400, "Color not found"));
+    }
+    return next(error);
+  }
+};
 
 export const getMaterials = async (_req, res, next) => {
   try {

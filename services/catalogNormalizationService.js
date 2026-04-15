@@ -132,10 +132,23 @@ const normalizeProductColors = (colors = []) =>
     .filter((color) => color.key);
 
 const normalizeProductColorKeys = (productDoc = {}) => {
-  const rawKeys =
-    Array.isArray(productDoc?.colorKeys) && productDoc.colorKeys.length
-      ? productDoc.colorKeys
-      : normalizeProductColors(productDoc?.colors).map((color) => color.key);
+  let rawKeys = [];
+
+  if (Array.isArray(productDoc?.colorKeys) && productDoc.colorKeys.length) {
+    rawKeys = productDoc.colorKeys;
+  } else if (productDoc?.colorKey) {
+    rawKeys = [productDoc.colorKey];
+  } else if (productDoc?.primaryColor?.key) {
+    rawKeys = [productDoc.primaryColor.key];
+  } else if (productDoc?.color?.key) {
+    rawKeys = [productDoc.color.key];
+  } else if (typeof productDoc?.color === "string") {
+    rawKeys = [productDoc.color];
+  } else if (typeof productDoc?.primaryColor === "string") {
+    rawKeys = [productDoc.primaryColor];
+  } else {
+    rawKeys = normalizeProductColors(productDoc?.colors).map((color) => color.key);
+  }
 
   return Array.from(
     new Set(
@@ -148,13 +161,21 @@ const normalizeProductColorKeys = (productDoc = {}) => {
 
 export const normalizeProductCatalogPayload = (productDoc = {}) => ({
   ...productDoc,
+  colors: normalizeProductColors(productDoc?.colors),
   previewImage:
     (typeof productDoc?.previewImage === "string" && productDoc.previewImage.trim()) ||
     (Array.isArray(productDoc?.images) ? productDoc.images.find((item) => String(item || "").trim()) || "" : ""),
   modelUrl: typeof productDoc?.modelUrl === "string" ? productDoc.modelUrl : "",
   dimensions: normalizeProductDimensions(productDoc),
   colorKeys: normalizeProductColorKeys(productDoc),
-  colors: normalizeProductColors(productDoc?.colors),
+  color:
+    normalizeProductColors(productDoc?.colors)[0] ||
+    (productDoc?.color && typeof productDoc.color === "object" ? productDoc.color : null) ||
+    null,
+  primaryColor:
+    normalizeProductColors(productDoc?.colors)[0] ||
+    (productDoc?.primaryColor && typeof productDoc.primaryColor === "object" ? productDoc.primaryColor : null) ||
+    null,
   styleKeys: normalizeStyleKeys(productDoc?.styleKeys || []),
   roomKeys: normalizeRoomKeys(productDoc?.roomKeys || []),
   collectionKeys: normalizeCollectionKeys(productDoc?.collectionKeys || []),

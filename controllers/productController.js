@@ -24,6 +24,7 @@ import {
   buildProductMutationPayload,
   createHttpError,
 } from "../services/productPayloadService.js";
+import { ensureProductColorKeys } from "../services/productColorAssignmentService.js";
 
 const ensureObjectId = (value, fieldName = "Product id") => {
   if (!mongoose.Types.ObjectId.isValid(String(value || ""))) {
@@ -427,14 +428,16 @@ export const getProductById = async (req, res, next) => {
 
 export const createProduct = async (req, res, next) => {
   try {
-    const payload = await resolveProductAttributeKeys(
-      await resolveProductSpecificationReferences(
-        buildProductMutationPayload({
-          body: req.body,
-          partial: false,
-          allowInventoryFields: false,
-        }),
-        { sourceBody: req.body }
+    const payload = await ensureProductColorKeys(
+      await resolveProductAttributeKeys(
+        await resolveProductSpecificationReferences(
+          buildProductMutationPayload({
+            body: req.body,
+            partial: false,
+            allowInventoryFields: false,
+          }),
+          { sourceBody: req.body }
+        )
       )
     );
 

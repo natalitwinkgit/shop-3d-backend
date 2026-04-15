@@ -1,3 +1,6 @@
+import { ERROR_CODES } from "../app/constants/errorCodes.js";
+import { consumeRateLimit } from "../app/lib/rateLimitStore.js";
+
 const DEFAULT_HEADERS = {
   "Cache-Control": "no-store",
 };
@@ -25,39 +28,33 @@ export const createRateLimit = ({
   message = "Too many requests",
   keyGenerator = null,
 } = {}) => {
-  const store = new Map();
-
-  return (req, res, next) => {
+  return async (req, res, next) => {
     const now = Date.now();
-
-    if (store.size > 1000) {
-      for (const [key, value] of store.entries()) {
-        if (!value || value.resetAt <= now) {
-          store.delete(key);
-        }
-      }
-    }
-
     const customKey =
       typeof keyGenerator === "function" ? keyGenerator(req) : "";
     const key = String(customKey || pickIp(req) || "unknown").trim();
 
-    const current = store.get(key);
-    if (!current || current.resetAt <= now) {
-      const resetAt = now + windowMs;
-      store.set(key, { count: 1, resetAt });
-      setRateLimitHeaders(res, max, max - 1, resetAt);
+    try {
+      const state = await consumeRateLimit({ key, windowMs, max });
+      setRateLimitHeaders(res, max, state.remaining, state.resetAt);
+
+      if (state.count > max) {
+        res.set(
+          "Retry-After",
+          String(Math.max(1, Math.ceil((state.resetAt - now) / 1000)))
+        );
+        return res.status(429).json({
+          code: ERROR_CODES.TOO_MANY_REQUESTS,
+          message,
+        });
+      }
+
       return next();
+    } catch (error) {
+      return res.status(500).json({
+        code: ERROR_CODES.SERVER_ERROR,
+        message: "Rate limiter internal error",
+      });
     }
-
-    current.count += 1;
-    setRateLimitHeaders(res, max, max - current.count, current.resetAt);
-
-    if (current.count > max) {
-      res.set("Retry-After", String(Math.max(1, Math.ceil((current.resetAt - now) / 1000))));
-      return res.status(429).json({ message });
-    }
-
-    return next();
   };
 };

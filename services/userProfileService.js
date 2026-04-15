@@ -94,6 +94,7 @@ const persistRewardStatusesIfNeeded = async (userDoc) => {
 };
 
 export const getPresenceStatus = (userDoc, now = Date.now()) => {
+  if (userDoc?.isAiAssistant) return "online";
   if (!userDoc?.isOnline) return "offline";
 
   const lastActivityAt = new Date(

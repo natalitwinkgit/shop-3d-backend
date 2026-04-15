@@ -22,6 +22,11 @@ import {
   getAdminAiSettingsView,
   getEffectiveAiConfig,
 } from "./aiConfigService.js";
+import {
+  buildCatalogReply,
+  isCatalogProductQuery,
+  searchCatalogProducts,
+} from "./catalogSearchService.js";
 
 let openaiClient = null;
 let openaiClientApiKey = "";
@@ -179,6 +184,7 @@ const formatMoneyUa = (value) => {
 };
 
 const getProductDisplayName = (productDoc) =>
+  pickStr(productDoc?.title) ||
   pickStr(productDoc?.name?.ua) ||
   pickStr(productDoc?.name?.en) ||
   pickStr(productDoc?.slug) ||
@@ -197,11 +203,14 @@ const buildProductCards = (items) =>
       price: Number(item.price || 0),
       finalPrice: Number(item.finalPrice || item.price || 0),
       currency: "UAH",
-      image: pickStr(item.primaryImage || item.images?.[0] || ""),
+      image: pickStr(item.image || item.primaryImage || item.images?.[0] || ""),
       storefrontUrl: pickStr(item.storefrontUrl) || buildStorefrontProductUrl(item.slug),
       apiUrl: pickStr(item.apiUrl) || `/api/products/by-slug/${encodeURIComponent(pickStr(item.slug))}`,
       inStock: !!item.inStock,
       stockQty: Number(item.stockQty || 0),
+      colorKeys: Array.isArray(item.colorKeys) ? item.colorKeys : [],
+      colors: Array.isArray(item.colors) ? item.colors : [],
+      primaryColor: item.primaryColor || item.colors?.[0] || null,
     }));
 
 const getResolvedProductSearch = ({ toolState, prefetchedProductSearch }) =>
@@ -242,6 +251,7 @@ const buildAiMessageMeta = ({
 const looksLikeProductSearchMessage = (query) => {
   const normalized = pickStr(query).toLowerCase();
   if (!normalized) return false;
+  if (isCatalogProductQuery(normalized)) return true;
 
   const hasBudget =
     parseBudgetFromQuery(normalized).minPrice != null ||
@@ -255,36 +265,8 @@ const looksLikeProductSearchMessage = (query) => {
   );
 };
 
-const buildVerifiedCatalogReply = ({ prefetchedProductSearch }) => {
-  const items = Array.isArray(prefetchedProductSearch?.items)
-    ? prefetchedProductSearch.items.filter(Boolean)
-    : [];
-
-  if (!items.length) return "";
-
-  const topItems = items.slice(0, 3);
-  const intro =
-    prefetchedProductSearch?.count > topItems.length
-      ? "Знайшов кілька варіантів у каталозі за вашим запитом:"
-      : "Знайшов у каталозі такі варіанти за вашим запитом:";
-
-  const lines = topItems.map((item, index) => {
-    const price = Number(item.finalPrice || item.price || 0);
-    const url = pickStr(item.storefrontUrl) || buildStorefrontProductUrl(item.slug);
-    return [
-      `${index + 1}. ${getProductDisplayName(item)} — ${formatMoneyUa(price)} грн`,
-      url ? `Переглянути: ${url}` : "",
-    ]
-      .filter(Boolean)
-      .join("\n");
-  });
-
-  return [
-    intro,
-    ...lines,
-    "Якщо хочете, підберу ще варіанти за розміром, кольором, формою або іншим бюджетом.",
-  ].join("\n");
-};
+const buildVerifiedCatalogReply = ({ prefetchedProductSearch }) =>
+  buildCatalogReply(prefetchedProductSearch);
 
 const looksLikeNoResultsDraft = (draft) => {
   const normalized = pickStr(draft).toLowerCase();
@@ -748,10 +730,10 @@ const buildAiInstructions = ({ chatUser, currentAdmin, additionalInstructions, s
   return [
     "You are the AI support admin for a furniture and 3D shop backend.",
     "You help human admins answer customer chats using only verified data from the provided tools and context.",
-    "Do not invent stock, delivery dates, pricing, addresses, order status, or policy details.",
-    "If a question depends on product, order, stock, or location data, use the relevant tool before answering.",
+    "Treat catalog data as read-only. Do not invent stock, delivery dates, pricing, addresses, order status, colors, or policy details.",
+    "If a question depends on product, order, stock, location, or color data, use the relevant tool before answering.",
     "For product requests, always call search_products before answering.",
-    "When the customer gives a budget like 'до 60000', pass it as maxPrice. When they mention a category like 'дивани', use that category instead of searching the literal generic word 'товари'.",
+    "When the customer gives a budget like 'до 60000', pass it as maxPrice. When they mention a category like 'дивани' or a color like 'рожеве', use it as a search filter instead of searching the literal generic word 'товари'.",
     "If verifiedCatalogSearch is present in the input, treat it as trusted MongoDB data and use it in the reply.",
     "If the information is not available, say so clearly and offer a human follow-up.",
     "Reply in Ukrainian unless the conversation clearly uses another language.",
@@ -824,86 +806,19 @@ const buildSearchOrdersToolResult = async ({ chatUser, query, status, limit }) =
 const buildSearchProductsToolResult = async ({
   query,
   category,
+  color,
   minPrice,
   maxPrice,
   limit,
 }) => {
-  const normalizedQuery = pickStr(query);
-  const safeLimit = clampInt(limit, 1, 10, 5);
-  const filter = { status: "active" };
-  const andFilters = [];
-
-  const detectedCategory = detectProductCategory(normalizedQuery, category);
-  if (detectedCategory) {
-    filter.category = detectedCategory;
-  }
-
-  const parsedBudget = parseBudgetFromQuery(normalizedQuery);
-  const resolvedMinPrice =
-    Number.isFinite(Number(minPrice)) && Number(minPrice) > 0
-      ? Number(minPrice)
-      : parsedBudget.minPrice;
-  const resolvedMaxPrice =
-    Number.isFinite(Number(maxPrice)) && Number(maxPrice) > 0
-      ? Number(maxPrice)
-      : parsedBudget.maxPrice;
-
-  if (resolvedMinPrice != null || resolvedMaxPrice != null) {
-    const priceExpr = buildEffectivePriceExpr();
-    if (resolvedMinPrice != null && resolvedMaxPrice != null) {
-      andFilters.push({
-        $expr: {
-          $and: [
-            { $gte: [priceExpr, resolvedMinPrice] },
-            { $lte: [priceExpr, resolvedMaxPrice] },
-          ],
-        },
-      });
-    } else if (resolvedMinPrice != null) {
-      andFilters.push({
-        $expr: { $gte: [priceExpr, resolvedMinPrice] },
-      });
-    } else if (resolvedMaxPrice != null) {
-      andFilters.push({
-        $expr: { $lte: [priceExpr, resolvedMaxPrice] },
-      });
-    }
-  }
-
-  if (normalizedQuery && !isGenericProductQuery(normalizedQuery) && !detectedCategory) {
-    const regex = new RegExp(escapeRegex(normalizedQuery), "i");
-    andFilters.push({
-      $or: [
-      { "name.ua": regex },
-      { "name.en": regex },
-      { slug: regex },
-      { category: regex },
-      { subCategory: regex },
-      { typeKey: regex },
-      ],
-    });
-  }
-
-  if (andFilters.length === 1) {
-    Object.assign(filter, andFilters[0]);
-  } else if (andFilters.length > 1) {
-    filter.$and = andFilters;
-  }
-
-  const products = await Product.find(filter)
-    .select("_id slug name category subCategory typeKey price discount inStock stockQty status images")
-    .sort({ updatedAt: -1 })
-    .limit(safeLimit)
-    .lean();
-
-  return {
-    query: normalizedQuery,
-    category: filter.category || "",
-    minPrice: resolvedMinPrice ?? null,
-    maxPrice: resolvedMaxPrice ?? null,
-    items: products.map(toProductSummary),
-    count: products.length,
-  };
+  return searchCatalogProducts({
+    query,
+    category,
+    color,
+    minPrice,
+    maxPrice,
+    limit,
+  });
 };
 
 const buildInventoryToolResult = async ({ productId }) => {
@@ -992,6 +907,7 @@ const executeAiTool = async ({
     const result = await buildSearchProductsToolResult({
       query: args.query,
       category: args.category,
+      color: args.color,
       minPrice: args.minPrice,
       maxPrice: args.maxPrice,
       limit: args.limit,
@@ -1091,12 +1007,13 @@ const buildAiTools = ({ sendEnabled }) => {
       type: "function",
       name: "search_products",
       description:
-        "Search products by name, slug, category, type, and budget. Use maxPrice for requests like 'до 60000'.",
+        "Search products by name, slug, category, color, type, and budget. Use maxPrice for requests like 'до 60000'.",
       parameters: {
         type: "object",
         properties: {
           query: { type: "string" },
           category: { type: "string" },
+          color: { type: "string" },
           minPrice: { type: "integer", minimum: 0 },
           maxPrice: { type: "integer", minimum: 0 },
           limit: { type: "integer", minimum: 1, maximum: 10 },

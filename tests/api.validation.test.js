@@ -40,3 +40,14 @@ test("unknown API route returns unified 404 contract", async () => {
   assert.equal(response.body.details, null);
   assert.equal(typeof response.body.requestId, "string");
 });
+
+test("chat text turn route is registered", async () => {
+  const response = await request(app).post("/api/chat/text/turn").send({
+    text: "столи зелені",
+    mode: "text",
+  });
+
+  assert.equal(response.status, 401);
+  assert.equal(response.body.code, "UNAUTHORIZED");
+  assert.equal(response.body.message, "Unauthorized");
+});

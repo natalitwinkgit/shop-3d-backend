@@ -86,8 +86,12 @@
 
 ### Chat
 - POST /api/chat/guest-session
+- POST /api/chat/live/turn
+- POST /api/chat/text/turn
 - GET /api/chat/admin-id
 - GET /api/chat/support-admin
+  - response includes `isAiAssistant`, `presence`, and `isOnline`
+  - catalog replies keep one best-match product card in `products[]` and `assistantMessage.meta.productCards[]`
 - PATCH /api/chat/read/:senderId/:receiverId
 - GET /api/chat/:userId1/:userId2
 
@@ -149,6 +153,10 @@ Notes:
 - Each inventory row can include `locationId`, `onHand`, `reserved`, `zone`, `note`, `isShowcase`, `reason`.
 
 ### Admin Reference Dictionaries
+- GET /api/admin/colors
+- POST /api/admin/colors
+- PATCH /api/admin/colors/:id
+- DELETE /api/admin/colors/:id
 - GET /api/admin/materials
 - POST /api/admin/materials
 - PATCH /api/admin/materials/:id

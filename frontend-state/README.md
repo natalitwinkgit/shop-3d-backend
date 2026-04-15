@@ -7,6 +7,7 @@ This folder adds a centralized Redux state layer for frontend integration with t
 - `store.js` - Redux store with unified reducers
 - `apiClient.js` - API wrapper with `Authorization: Bearer <token>` and `localStorage` token persistence
 - `slices/authSlice.js` - login/profile/logout state
+- `slices/adminColorsSlice.js` - admin color CRUD state for `/api/admin/colors`
 - `slices/catalogSlice.js` - products, facets, filters, product-by-slug, product attribute dictionaries
 - `slices/cartSlice.js` - cart CRUD state
 
@@ -37,4 +38,6 @@ export const Root = () => (
 
 - This repository is backend-focused. The Redux module is provided as a ready integration layer for a separate frontend codebase.
 - `auth_token` is persisted in `localStorage` and automatically attached to API requests.
-- Product create/edit forms can dispatch `loadProductAttributesThunk()` and use `catalog.productAttributes.rooms`, `catalog.productAttributes.styles`, and `catalog.productAttributes.collections` for select options.
+- Product create/edit forms can dispatch `loadProductAttributesThunk()` and use `catalog.productAttributes.rooms`, `catalog.productAttributes.styles`, `catalog.productAttributes.collections`, and `catalog.productAttributes.colors` for select options.
+- Admin color screens can dispatch `loadAdminColorsThunk()`, `createAdminColorThunk()`, `updateAdminColorThunk()`, and `deleteAdminColorThunk()` from `frontend-state/slices/adminColorsSlice.js`.
+- The admin color slice stores the current list in `state.adminColors.items` and the selected row in `state.adminColors.selectedColorId`.

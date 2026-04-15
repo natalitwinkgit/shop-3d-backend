@@ -130,7 +130,8 @@ Material / manufacturer dictionaries:
 
 - `GET /api/materials` returns all materials for select fields.
 - `GET /api/manufacturers` returns all manufacturers for select fields.
-- Admin-only writes are available under `/api/admin/materials` and `/api/admin/manufacturers`.
+- `GET /api/colors` returns the full color palette with `key`, `name`, `hex`, and `rgb`.
+- Admin-only writes are available under `/api/admin/colors`, `/api/admin/materials`, and `/api/admin/manufacturers`.
 - New product forms should send `specifications.material` and `specifications.manufacturer` as ObjectId strings from the dictionaries. The backend will keep legacy `materialKey` and `manufacturerKey` in sync for current filters.
 
 Product attribute dictionaries for product form selects:
@@ -476,15 +477,33 @@ Hydrated product response example:
     "supportAdmin": {
       "adminId": "admin_user_id",
       "adminName": "Support Admin",
-      "isAiAssistant": false
+      "adminEmail": "support@example.com",
+      "isAiAssistant": false,
+      "presence": "online",
+      "isOnline": true
     }
   }
   ```
+
+- `POST /api/chat/live/turn`
+  - auth required
+  - accepts multipart `audio` plus optional `text` or `transcript`
+  - optional body: `language`, `mode`, `conversationId`
+  - returns the persisted user and assistant messages for the active support conversation
+  - when the reply matches catalog products, `products[]` and `assistantMessage.meta.productCards[]` contain the single best-match clickable storefront card
+  - if `text` or `transcript` is provided, the backend uses it directly as the saved user message and skips re-transcribing audio
+  - for voice turns, `tts.text` and `assistantMessage.meta.speechText` contain a short speakable summary instead of the full catalog text
+
+- `POST /api/chat/text/turn`
+  - auth required
+  - typed-input alias for the same support turn flow
+  - body: `text` or `transcript`, optional `language`, `mode`, `conversationId`
 
 - `GET /api/chat/admin-id`
 - `GET /api/chat/support-admin`
   - now require `Authorization: Bearer <token>`
   - use these only for logged-in users
+  - response includes `presence` and `isOnline` so the frontend can show live support availability
 
 - `GET /api/chat/:userId1/:userId2`
 - `PATCH /api/chat/read/:senderId/:receiverId`
@@ -931,6 +950,10 @@ Notes:
 - `POST /api/admin/materials`
 - `PATCH /api/admin/materials/:id`
 - `DELETE /api/admin/materials/:id`
+- `GET /api/admin/colors`
+- `POST /api/admin/colors`
+- `PATCH /api/admin/colors/:id`
+- `DELETE /api/admin/colors/:id`
 - `GET /api/admin/manufacturers`
 - `POST /api/admin/manufacturers`
 - `PATCH /api/admin/manufacturers/:id`
@@ -1326,6 +1349,7 @@ Recommended product data split:
 
 - `GET /api/admin/chat/support-admin`
 - `GET /api/admin/chat/admin-id`
+  - response includes `presence` and `isOnline` for support status
 - `PATCH /api/admin/chat/read/:senderId/:receiverId`
 - `GET /api/admin/chat/:userId1/:userId2`
 
@@ -1498,6 +1522,7 @@ Payload contains the saved message from DB plus aliases:
 - [ ] Product characteristics panel: use `PATCH /api/admin/products/:id/characteristics` to update `dimensions`, `ipRating`, `materialId`, `manufacturerId`, or full `specifications`.
 - [ ] Product characteristics panel: use `DELETE /api/admin/products/:id/characteristics` only when the admin intentionally clears dimensions and `ipRating`.
 - [ ] Dictionary management screen: add materials CRUD using `GET/POST/PATCH/DELETE /api/admin/materials`.
+- [ ] Dictionary management screen: add colors CRUD using `GET/POST/PATCH/DELETE /api/admin/colors`.
 - [ ] Dictionary management screen: add manufacturers CRUD using `GET/POST/PATCH/DELETE /api/admin/manufacturers`.
 - [ ] Form validation: show backend 400 messages directly for invalid references, for example `specifications.material was not found`.
 - [ ] Product table/details: render hydrated `product.specifications.material.name[lang]` and `product.specifications.manufacturer.name` instead of raw `materialKey` / `manufacturerKey`.
@@ -1559,6 +1584,7 @@ const manufacturerName =
 - Admin frontend should not call legacy public mutation routes when `/api/admin/*` exists.
 - Storefront support chat must send socket auth token in handshake.
 - Anonymous support chat must first call `POST /api/chat/guest-session`, persist `guestId` + `token`, and use `supportAdmin.adminId` from that response.
+- Render catalog replies as product cards from `products[]` or `message.meta.productCards[]`; do not depend on raw `Посилання:` text.
 - Logged-in users must stop using public `/api/chat/admin-id` or `/api/chat/support-admin` without auth; send the regular user JWT.
 - For AI catalog answers, render product cards from:
   - `result.products` in AI response

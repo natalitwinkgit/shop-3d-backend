@@ -423,7 +423,20 @@ export const buildProductMutationPayload = ({
   if (styleKeys !== undefined) payload.styleKeys = normalizeStyleKeys(styleKeys);
   else if (isCreate) payload.styleKeys = [];
 
-  const colorKeys = parseStringArrayField(body.colorKeys ?? body.colors, "colorKeys");
+  const colorField =
+    body.colorKeys ??
+    body.colors ??
+    body.colorKey ??
+    body.primaryColorKey ??
+    body.primaryColor ??
+    body.color;
+
+  const colorKeys = parseStringArrayField(
+    typeof colorField === "object" && colorField !== null
+      ? colorField.key || colorField.slug || colorField.value || ""
+      : colorField,
+    "colorKeys"
+  );
   if (colorKeys !== undefined) payload.colorKeys = colorKeys;
   else if (isCreate) payload.colorKeys = [];
 

@@ -115,6 +115,66 @@ const searchColorsByName = async (query) => {
     ],
   })
     .select(buildColorProjection)
+    .sort({ key: 1 })
+    .lean();
+};
+
+const COLOR_QUERY_HINTS = [
+  {
+    pattern: /(pink|розов|рожев|rose|fuchsia|hot ?pink|light ?pink|deep ?pink|misty ?rose)/i,
+    keys: ["pink", "lightpink", "hotpink", "deeppink", "mistyrose", "dusty-rose"],
+  },
+  {
+    pattern: /(red|червон|crimson|salmon|coral|tomato)/i,
+    keys: ["red", "indianred", "lightcoral", "salmon", "darksalmon", "lightsalmon", "crimson"],
+  },
+  {
+    pattern: /(orange|оранж|amber)/i,
+    keys: ["orange", "darkorange", "coral"],
+  },
+  {
+    pattern: /(yellow|gold|жовт|mustard)/i,
+    keys: ["yellow", "gold", "khaki", "lightyellow"],
+  },
+  {
+    pattern: /(green|зелено|olive|emerald|mint|sage)/i,
+    keys: ["green", "forestgreen", "seagreen", "olive", "limegreen", "mintcream"],
+  },
+  {
+    pattern: /(blue|син|navy|azure|sky)/i,
+    keys: ["blue", "lightblue", "deepskyblue", "royalblue", "navy", "skyblue", "azure"],
+  },
+  {
+    pattern: /(purple|violet|фіолет|пурпур|orchid|lilac)/i,
+    keys: ["purple", "violet", "orchid", "plum", "mediumorchid", "thistle"],
+  },
+  {
+    pattern: /(gray|grey|сір|silver|graphite|ash|stone)/i,
+    keys: ["gray", "grey", "lightgray", "darkgray", "dimgray", "silver", "graphite", "ash", "stone"],
+  },
+  {
+    pattern: /(black|white|чорн|білий|ivory|cream|sand|beige|taupe|brown|walnut|oak)/i,
+    keys: ["black", "white", "ivory", "cream", "sand", "beige", "taupe", "brown", "walnut", "oak"],
+  },
+];
+
+const searchColorsByHints = async (query) => {
+  const normalized = String(query || "").trim();
+  if (!normalized) return [];
+
+  const hintedKeys = Array.from(
+    new Set(
+      COLOR_QUERY_HINTS.flatMap(({ pattern, keys }) => (pattern.test(normalized) ? keys : []))
+        .map((key) => String(key || "").trim().toLowerCase())
+        .filter(Boolean)
+    )
+  );
+
+  if (!hintedKeys.length) return [];
+
+  return Color.find({ key: { $in: hintedKeys } })
+    .select(buildColorProjection)
+    .sort({ key: 1 })
     .lean();
 };
 
@@ -166,4 +226,12 @@ export const lookupColor = async ({ hex, rgb }) => {
   return null;
 };
 
-export const findColors = async (query) => searchColorsByName(query);
+export const findColors = async (query) => {
+  const exact = await searchColorsByName(query);
+  if (exact.length) return exact;
+  return searchColorsByHints(query);
+};
+
+export const findColorsWithHints = async (query) => {
+  return findColors(query);
+};

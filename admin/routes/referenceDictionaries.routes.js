@@ -1,26 +1,35 @@
 import { Router } from "express";
 
 import {
+  createColor,
   createManufacturer,
   createMaterial,
   createProductCollectionAttribute,
   createProductRoomAttribute,
   createProductStyleAttribute,
+  deleteColor,
   deleteManufacturer,
   deleteMaterial,
   deleteProductAttribute,
+  getAdminColors,
   getAdminProductAttributeDictionaries,
   getAdminProductCollectionAttributes,
   getAdminProductRoomAttributes,
   getAdminProductStyleAttributes,
   getManufacturers,
   getMaterials,
+  updateColor,
   updateManufacturer,
   updateMaterial,
   updateProductAttribute,
 } from "../../controllers/referenceDictionaryController.js";
 
 const router = Router();
+
+router.get("/colors", getAdminColors);
+router.post("/colors", createColor);
+router.patch("/colors/:id", updateColor);
+router.delete("/colors/:id", deleteColor);
 
 router.get("/materials", getMaterials);
 router.post("/materials", createMaterial);

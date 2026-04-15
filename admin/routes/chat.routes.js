@@ -8,6 +8,7 @@ import {
   loadAdminIndex,
   loadUserNameMap,
 } from "../lib/adminShared.js";
+import { getPresenceStatus } from "../../services/userProfileService.js";
 
 const router = Router();
 
@@ -25,20 +26,30 @@ const getSupportAdmin = async (req, res) => {
   try {
     const currentAdminId = String(req.user?._id || req.user?.id || "");
     if (currentAdminId) {
+      const presence = req.user?.isAiAssistant ? "online" : getPresenceStatus(req.user);
       return res.json({
         adminId: currentAdminId,
         adminName: req.user?.name || req.user?.email || "Admin",
+        adminEmail: req.user?.email || "",
+        isAiAssistant: !!req.user?.isAiAssistant,
+        presence,
+        isOnline: presence !== "offline",
       });
     }
 
     const firstAdmin = await User.findOne({ role: { $in: ADMIN_ROLES } })
-      .select("_id name email")
+      .select("_id name email isAiAssistant isOnline presence lastActivityAt lastHeartbeatAt lastSeen")
       .lean();
     if (!firstAdmin) return res.status(404).json({ message: "No admin found" });
+    const presence = firstAdmin.isAiAssistant ? "online" : getPresenceStatus(firstAdmin);
 
     return res.json({
       adminId: String(firstAdmin._id),
       adminName: firstAdmin.name || firstAdmin.email || "Admin",
+      adminEmail: firstAdmin.email || "",
+      isAiAssistant: !!firstAdmin.isAiAssistant,
+      presence,
+      isOnline: presence !== "offline",
     });
   } catch (error) {
     return res.status(500).json({ message: "Failed to get admin id" });
