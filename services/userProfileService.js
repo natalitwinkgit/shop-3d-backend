@@ -6,6 +6,13 @@ import User, {
   isValidPhone,
   normalizePhone,
 } from "../models/userModel.js";
+import {
+  ensureLoyaltyCard,
+  getUserOrderSummary as getLoyaltyOrderSummary,
+  listActiveLoyaltyRewards,
+  markLoyaltyRewardUsedByOrder,
+  restoreLoyaltyRewardFromOrder,
+} from "./loyaltyService.js";
 
 const ONLINE_WINDOW_MS = 30 * 1000;
 const AWAY_WINDOW_MS = 5 * 60 * 1000;
@@ -18,6 +25,10 @@ const LOYALTY_TIERS = [
 ];
 
 const pickStr = (value) => String(value || "").trim();
+
+const activeOrderMatch = () => ({
+  $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }],
+});
 
 const toBool = (value) => String(value) === "true" || String(value) === "1" || value === true;
 
@@ -115,6 +126,10 @@ const buildLoyaltyResponse = (loyalty = {}, fallbackUserId = "") => ({
     (fallbackUserId ? `DC-${String(fallbackUserId).slice(-8).toUpperCase()}` : ""),
   tier: pickStr(loyalty?.tier) || "none",
   baseDiscountPct: toNumber(loyalty?.baseDiscountPct, 0),
+  bonusBalance: toNumber(loyalty?.bonusBalance, 0),
+  totalEarned: toNumber(loyalty?.totalEarned, 0),
+  totalRedeemed: toNumber(loyalty?.totalRedeemed, 0),
+  totalExpired: toNumber(loyalty?.totalExpired, 0),
   totalSpent: toNumber(loyalty?.totalSpent, 0),
   completedOrders: toNumber(loyalty?.completedOrders, 0),
   lastOrderAt: loyalty?.lastOrderAt || null,
@@ -264,15 +279,18 @@ export const selectEligibleReward = ({
 };
 
 export const buildCheckoutDiscountSummary = async ({ userId, subtotal, rewardId = "" }) => {
-  const userDoc = await recalculateUserLoyalty(userId);
+  const userDoc = await User.findById(userId);
   if (!userDoc) {
     const err = new Error("User not found");
     err.statusCode = 404;
     throw err;
   }
 
-  const rewards = await persistRewardStatusesIfNeeded(userDoc);
-  const loyalty = buildLoyaltyResponse(userDoc.loyalty, userDoc._id);
+  const card = await ensureLoyaltyCard(userId, { userDoc });
+  const cardRewards = await listActiveLoyaltyRewards(userId, { subtotal });
+  const legacyRewards = await persistRewardStatusesIfNeeded(userDoc);
+  const rewards = [...cardRewards, ...legacyRewards];
+  const loyalty = buildLoyaltyResponse(card || userDoc.loyalty, userDoc._id);
   const safeSubtotal = roundMoney(subtotal);
   const loyaltyDiscount = roundMoney((safeSubtotal * Math.max(0, toNumber(loyalty.baseDiscountPct, 0))) / 100);
   const selectedReward = selectEligibleReward({
@@ -297,31 +315,7 @@ export const buildCheckoutDiscountSummary = async ({ userId, subtotal, rewardId 
 };
 
 export const getUserOrderSummary = async (userId) => {
-  const [summary] = await Order.aggregate([
-    { $match: { user: userId } },
-    {
-      $group: {
-        _id: "$user",
-        totalOrders: { $sum: 1 },
-        completedOrders: {
-          $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] },
-        },
-        totalSpent: {
-          $sum: {
-            $cond: [{ $eq: ["$status", "completed"] }, "$totals.cartTotal", 0],
-          },
-        },
-        lastOrderAt: { $max: "$createdAt" },
-      },
-    },
-  ]);
-
-  return {
-    totalOrders: toNumber(summary?.totalOrders, 0),
-    completedOrders: toNumber(summary?.completedOrders, 0),
-    totalSpent: toNumber(summary?.totalSpent, 0),
-    lastOrderAt: summary?.lastOrderAt || null,
-  };
+  return getLoyaltyOrderSummary(userId);
 };
 
 const getTierByTotalSpent = (totalSpent) =>
@@ -331,31 +325,8 @@ export const recalculateUserLoyalty = async (userId) => {
   const userDoc = await User.findById(userId);
   if (!userDoc) return null;
 
-  const summary = await getUserOrderSummary(userDoc._id);
-  const tierConfig = getTierByTotalSpent(summary.totalSpent);
-
-  const existingLoyalty =
-    userDoc.loyalty?.toObject ? userDoc.loyalty.toObject() : userDoc.loyalty || {};
-  const manualOverride = !!existingLoyalty.manualOverride;
-
-  userDoc.loyalty = {
-    ...existingLoyalty,
-    cardNumber:
-      pickStr(existingLoyalty.cardNumber) ||
-      `DC-${String(userDoc._id).slice(-8).toUpperCase()}`,
-    tier: manualOverride ? pickStr(existingLoyalty.tier) || "none" : tierConfig.tier,
-    baseDiscountPct: manualOverride
-      ? toNumber(existingLoyalty.baseDiscountPct, 0)
-      : tierConfig.discountPct,
-    totalSpent: summary.totalSpent,
-    completedOrders: summary.completedOrders,
-    lastOrderAt: summary.lastOrderAt,
-    notes: pickStr(existingLoyalty.notes),
-    manualOverride,
-  };
-
-  await userDoc.save();
-  return userDoc;
+  await ensureLoyaltyCard(userDoc._id, { userDoc });
+  return User.findById(userDoc._id);
 };
 
 export const touchUserPresence = async (
@@ -412,7 +383,7 @@ export const listAdminUsersData = async () => {
 
   const summaryRows = userIds.length
     ? await Order.aggregate([
-        { $match: { user: { $in: userIds } } },
+        { $match: { user: { $in: userIds }, ...activeOrderMatch() } },
         {
           $group: {
             _id: "$user",
@@ -470,7 +441,7 @@ export const getAdminUserDetail = async (userId) => {
 
   const rewards = await persistRewardStatusesIfNeeded(userDoc);
   const summary = await getUserOrderSummary(userDoc._id);
-  const recentOrders = await Order.find({ user: userDoc._id })
+  const recentOrders = await Order.find({ user: userDoc._id, ...activeOrderMatch() })
     .sort({ createdAt: -1 })
     .limit(10)
     .lean();
@@ -488,7 +459,7 @@ export const getAdminUserDetail = async (userId) => {
 };
 
 export const listAdminUserOrders = async (userId, { page = 1, limit = 20, status = "" } = {}) => {
-  const filter = { user: userId };
+  const filter = { user: userId, ...activeOrderMatch() };
   if (pickStr(status)) {
     filter.status = pickStr(status);
   }
@@ -543,7 +514,8 @@ export const updateUserLoyaltySettings = async (userId, payload = {}) => {
   };
 
   await userDoc.save();
-  return userDoc;
+  await ensureLoyaltyCard(userDoc._id, { userDoc });
+  return User.findById(userDoc._id);
 };
 
 export const createUserReward = async (userId, payload = {}) => {
@@ -625,6 +597,9 @@ export const syncUserCommerceData = async (userId) => {
 export const markRewardUsedByOrder = async ({ userId, rewardId, orderId }) => {
   if (!pickStr(rewardId)) return null;
 
+  const loyaltyReward = await markLoyaltyRewardUsedByOrder({ userId, rewardId, orderId });
+  if (loyaltyReward) return loyaltyReward;
+
   const userDoc = await User.findById(userId);
   if (!userDoc) return null;
 
@@ -644,6 +619,9 @@ export const markRewardUsedByOrder = async ({ userId, rewardId, orderId }) => {
 
 export const restoreRewardFromOrder = async ({ userId, rewardId, orderId }) => {
   if (!pickStr(rewardId)) return null;
+
+  const loyaltyReward = await restoreLoyaltyRewardFromOrder({ userId, rewardId, orderId });
+  if (loyaltyReward) return loyaltyReward;
 
   const userDoc = await User.findById(userId);
   if (!userDoc) return null;
