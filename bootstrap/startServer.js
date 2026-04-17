@@ -53,7 +53,16 @@ export const startServer = async () => {
       }
     }
 
-    const httpServer = server.listen(env.port, () => {
+    let httpServer;
+    const onServerError = (serverError) => {
+      logger.error("HTTP server error", {}, serverError);
+      if (serverError?.code === "EADDRINUSE") {
+        logger.error("Port already in use", { port: env.port });
+      }
+      process.exit(1);
+    };
+
+    httpServer = server.listen(env.port, () => {
       logger.info("Server started", { port: env.port });
       logger.info("Allowed origins configured", { allowedOrigins });
       logger.info("Vercel preview regex configured", {
@@ -61,22 +70,34 @@ export const startServer = async () => {
       });
     });
 
+    server.on("error", onServerError);
+
     let isShuttingDown = false;
     const shutdown = async (signal) => {
       if (isShuttingDown) return;
       isShuttingDown = true;
 
       logger.warn("Shutdown signal received", { signal });
-      httpServer.close(async () => {
+      if (httpServer && httpServer.listening) {
+        httpServer.close(async () => {
+          try {
+            await mongoose.connection.close();
+            logger.info("MongoDB connection closed");
+            process.exit(0);
+          } catch (closeError) {
+            logger.error("Error while closing MongoDB connection", {}, closeError);
+            process.exit(1);
+          }
+        });
+      } else {
         try {
           await mongoose.connection.close();
           logger.info("MongoDB connection closed");
-          process.exit(0);
         } catch (closeError) {
           logger.error("Error while closing MongoDB connection", {}, closeError);
-          process.exit(1);
         }
-      });
+        process.exit(1);
+      }
 
       setTimeout(() => {
         logger.error("Forced shutdown after timeout");
@@ -86,12 +107,15 @@ export const startServer = async () => {
 
     process.on("SIGINT", () => shutdown("SIGINT"));
     process.on("SIGTERM", () => shutdown("SIGTERM"));
+    process.on("SIGUSR2", () => shutdown("SIGUSR2"));
 
     process.on("unhandledRejection", (reason) => {
       logger.error("Unhandled Rejection", {}, reason);
+      shutdown("unhandledRejection");
     });
     process.on("uncaughtException", (error) => {
       logger.error("Uncaught Exception", {}, error);
+      shutdown("uncaughtException");
     });
   } catch (error) {
     logger.error("Mongo connection error", {}, error);

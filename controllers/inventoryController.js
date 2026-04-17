@@ -116,10 +116,10 @@ const matchesInventoryFilters = (item, req) => {
   const locationId = pickStr(req.query.locationId);
   const showcase = req.query.showcase;
 
-  if (city && pickStr(item.location?.city).toLowerCase() !== city) return false;
-  if (cityKey && pickStr(item.location?.cityKey).toLowerCase() !== cityKey) return false;
-  if (type && pickStr(item.location?.type).toLowerCase() !== type) return false;
-  if (locationId && String(item.location?._id || "") !== locationId) return false;
+  if (city && pickStr(item.city).toLowerCase() !== city) return false;
+  if (cityKey && pickStr(item.cityKey).toLowerCase() !== cityKey) return false;
+  if (type && pickStr(item.locationType).toLowerCase() !== type) return false;
+  if (locationId && String(item.locationId || "") !== locationId) return false;
   if (showcase !== undefined && !!item.isShowcase !== toBool(showcase)) return false;
 
   return true;
@@ -131,19 +131,20 @@ const buildInventoryFacets = (items = []) => {
   const locationMap = new Map();
 
   items.forEach((item) => {
-    const location = item.location || {};
-    const cityKey = pickStr(location.cityKey) || pickStr(location.city);
-    const cityLabel = pickStr(location.cityLabel) || pickStr(location.city);
-    const type = pickStr(location.type);
-    const locationId = String(location.id || location._id || "");
+    const location = item.locationDetails || (typeof item.location === "object" ? item.location : {});
+    const cityKey = pickStr(item.cityKey) || pickStr(location.cityKey) || pickStr(location.city);
+    const cityLabel = pickStr(item.cityLabel) || pickStr(location.cityLabel) || pickStr(location.city);
+    const type = pickStr(item.locationType) || pickStr(location.type);
+    const locationId = String(item.locationId || location.id || location._id || "");
 
     if (cityKey) {
-      const existingCity = cityMap.get(cityKey) || {
-        city: pickStr(location.city),
-        cityKey,
-        cityLabel,
-        count: 0,
-      };
+      const existingCity =
+        cityMap.get(cityKey) || {
+          city: pickStr(item.city) || pickStr(location.city),
+          cityKey,
+          cityLabel,
+          count: 0,
+        };
       existingCity.count += 1;
       cityMap.set(cityKey, existingCity);
     }
@@ -157,13 +158,13 @@ const buildInventoryFacets = (items = []) => {
     if (locationId) {
       locationMap.set(locationId, {
         id: locationId,
-        city: pickStr(location.city),
-        cityKey: pickStr(location.cityKey),
+        city: pickStr(item.city) || pickStr(location.city),
+        cityKey: pickStr(item.cityKey) || pickStr(location.cityKey),
         cityLabel: cityLabel,
         type,
-        name: pickStr(location.name),
-        address: pickStr(location.address),
-        isActive: location.isActive ?? true,
+        name: pickStr(item.locationName) || pickStr(location.name),
+        address: pickStr(item.locationAddress) || pickStr(location.address),
+        isActive: item.isActive ?? location.isActive ?? true,
       });
     }
   });
@@ -203,6 +204,10 @@ const formatInventoryRow = (doc, translations) => {
   const available = Math.max(0, onHand - reserved);
   const location = presentLocation(doc.location, translations);
 
+  const locationLabel = String(
+    location.name || location.typeLabel || location.cityLabel || location.type || ""
+  ).trim();
+
   return {
     id: String(doc._id),
     productId: String(doc.product?._id || doc.product || ""),
@@ -221,7 +226,8 @@ const formatInventoryRow = (doc, translations) => {
     locationAddress: location.address || "",
     addressKey: location.addressKey || "",
     isActive: location.isActive ?? true,
-    location,
+    location: locationLabel,
+    locationDetails: location,
     onHand,
     reserved,
     available,
@@ -238,6 +244,16 @@ const formatMovement = (doc, translations) => {
   const fromLocation = presentLocation(doc.fromLocation, translations);
   const toLocation = presentLocation(doc.toLocation, translations);
 
+  const locationLabel = String(
+    location.name || location.typeLabel || location.cityLabel || location.type || ""
+  ).trim();
+  const fromLocationLabel = String(
+    fromLocation.name || fromLocation.typeLabel || fromLocation.cityLabel || fromLocation.type || ""
+  ).trim();
+  const toLocationLabel = String(
+    toLocation.name || toLocation.typeLabel || toLocation.cityLabel || toLocation.type || ""
+  ).trim();
+
   return {
     id: String(doc._id),
     type: doc.type || "",
@@ -248,17 +264,20 @@ const formatMovement = (doc, translations) => {
     locationName: location.name || "",
     locationNameKey: location.nameKey || "",
     locationAddress: location.address || "",
-    location,
+    location: locationLabel,
+    locationDetails: location,
     fromLocationId: fromLocation.id || String(doc.fromLocation?._id || doc.fromLocation || ""),
     fromLocationName: fromLocation.name || "",
     fromLocationNameKey: fromLocation.nameKey || "",
     fromLocationAddress: fromLocation.address || "",
-    fromLocation,
+    fromLocation: fromLocationLabel,
+    fromLocationDetails: fromLocation,
     toLocationId: toLocation.id || String(doc.toLocation?._id || doc.toLocation || ""),
     toLocationName: toLocation.name || "",
     toLocationNameKey: toLocation.nameKey || "",
     toLocationAddress: toLocation.address || "",
-    toLocation,
+    toLocation: toLocationLabel,
+    toLocationDetails: toLocation,
     deltaOnHand: Number(doc.deltaOnHand || 0),
     deltaReserved: Number(doc.deltaReserved || 0),
     previousOnHand: Number(doc.previousOnHand || 0),

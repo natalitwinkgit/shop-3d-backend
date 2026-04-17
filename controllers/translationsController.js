@@ -1,69 +1,77 @@
 import Translation from "../models/Translation.js";
 
-const TRANSLATION_DEFAULTS = {
-  ua: {
-    rooms: {
-      living_room: "Вітальня",
-      bedroom: "Спальня",
-      bathroom: "Ванна кімната",
-      kids_room: "Дитяча",
-      home_office: "Домашній кабінет",
-      dining_room: "Їдальня",
-      hallway: "Передпокій",
-      kitchen: "Кухня",
-    },
-    filters: {
-      rooms: "Кімната",
-    },
-  },
-  en: {
-    rooms: {
-      living_room: "Living room",
-      bedroom: "Bedroom",
-      bathroom: "Bathroom",
-      kids_room: "Kids room",
-      home_office: "Home office",
-      dining_room: "Dining room",
-      hallway: "Hallway",
-      kitchen: "Kitchen",
-    },
-    filters: {
-      rooms: "Room",
-    },
-  },
+const isPlainObject = (value) =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+const normalizeLang = (value) => {
+  const lang = String(value || "").trim().toLowerCase();
+  if (!lang || lang === "uk") return "ua";
+  return lang === "en" ? "en" : "ua";
+};
+
+const stripMeta = (doc = {}) => {
+  const {
+    _id,
+    __v,
+    createdAt,
+    updatedAt,
+    lang,
+    ...payload
+  } = doc || {};
+
+  return payload;
+};
+
+const deepMerge = (base, override) => {
+  if (!isPlainObject(base) && !isPlainObject(override)) {
+    return override ?? base;
+  }
+
+  const result = { ...(base || {}) };
+
+  Object.entries(override || {}).forEach(([key, value]) => {
+    if (isPlainObject(value) && isPlainObject(result[key])) {
+      result[key] = deepMerge(result[key], value);
+      return;
+    }
+
+    result[key] = value;
+  });
+
+  return result;
 };
 
 export const getTranslationsByLang = async (req, res) => {
   try {
-    const { lang } = req.params;
+    const lang = normalizeLang(req.params?.lang);
 
     if (!lang) {
       return res.status(400).json({ message: "Language is required" });
     }
 
-    const translation = await Translation.findOne({ lang }).lean();
+    const [requestedDoc, uaDoc, enDoc] = await Promise.all([
+      Translation.findOne({ lang }).lean(),
+      Translation.findOne({ lang: "ua" }).lean(),
+      Translation.findOne({ lang: "en" }).lean(),
+    ]);
 
-    if (!translation) {
+    if (!requestedDoc && !uaDoc && !enDoc) {
       return res.status(404).json({
-        message: `Translations for '${lang}' not found`
+        message: `Translations for '${lang}' not found`,
       });
     }
 
-    // 🔥 ПОВЕРТАЄМО ЧИСТИЙ ОБʼЄКТ ДЛЯ ФРОНТА
-    const defaults = TRANSLATION_DEFAULTS[lang] || {};
-    return res.json({
-      ...defaults,
-      ...translation,
-      rooms: {
-        ...(defaults.rooms || {}),
-        ...((translation && translation.rooms) || {}),
-      },
-      filters: {
-        ...(defaults.filters || {}),
-        ...((translation && translation.filters) || {}),
-      },
-    });
+    const fallbackDocs =
+      lang === "en"
+        ? [stripMeta(uaDoc), stripMeta(enDoc || requestedDoc)]
+        : [stripMeta(enDoc), stripMeta(uaDoc || requestedDoc)];
 
+    const payload = fallbackDocs.reduce((acc, doc) => deepMerge(acc, doc || {}), {});
+
+    return res.json({
+      lang,
+      ...payload,
+    });
   } catch (error) {
     console.error("Translation controller error:", error);
     return res.status(500).json({ message: "Server error" });

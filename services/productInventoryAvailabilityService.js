@@ -45,6 +45,9 @@ const formatInventoryRow = (row, translations) => {
   const available = Math.max(0, onHand - reserved);
   const location = buildLocationPresentation(toLocationDoc(row.location) || {}, translations);
 
+  const locationLabel =
+    String(location.name || location.typeLabel || location.cityLabel || location.type || "").trim();
+
   return {
     id: pickStr(row._id),
     productId: pickStr(row.product?._id || row.product),
@@ -58,7 +61,8 @@ const formatInventoryRow = (row, translations) => {
     locationAddress: location.address,
     addressKey: location.addressKey,
     isActive: location.isActive,
-    location,
+    location: locationLabel,
+    locationDetails: location,
     onHand,
     reserved,
     available,

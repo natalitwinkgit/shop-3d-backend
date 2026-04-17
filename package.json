@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
+    "kill-port": "node scripts/killPort.cjs",
     "seed:colors": "node scripts/seedHtmlColors.js",
     "seed:catalog:reset": "node scripts/seedExtraCategories.js",
     "seed:categories:extra": "node scripts/seedExtraCategories.js",
