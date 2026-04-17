@@ -129,6 +129,43 @@ export const buildProductQuestionReplyEmail = ({ question, replyMessage }) => {
   };
 };
 
+export const buildProductQuestionReplySms = ({ question, replyMessage } = {}) => {
+  const productTitle = getProductTitle(question);
+  const customerPhone = pickStr(question?.customer?.phone);
+  const sku = pickStr(question?.productSnapshot?.sku);
+  const originalMessage = normalizeMultiline(question?.message)
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 160);
+  const answer = normalizeMultiline(replyMessage || question?.adminReply?.message)
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 240);
+
+  const brand = "MebliHub";
+  const header = `[${brand}]`;
+  let text = `${header} Відповідь на питання про ${productTitle}${sku ? ` (${sku})` : ""}. `;
+  if (originalMessage) text += `Питання: ${originalMessage}. `;
+  text += `Відповідь: ${answer}`;
+
+  // Ensure SMS-friendly single-line text
+  text = text.replace(/\s+/g, " ").trim();
+
+  return {
+    to: customerPhone,
+    text,
+  };
+};
+
+export const sendProductQuestionReplySms = async ({ question, replyMessage } = {}) => {
+  const phone = pickStr(question?.customer?.phone);
+  if (!phone) return { sent: false, skipped: true, reason: "NO_CUSTOMER_PHONE" };
+
+  // Currently no SMS provider configured in env. Provide a safe no-op result.
+  // Integrate a provider (Twilio, Nexmo, etc.) and use env vars to enable real sending.
+  return { sent: false, skipped: true, reason: "SMS_NOT_CONFIGURED" };
+};
+
 export const buildPasswordResetEmail = ({ user, token, expiresAt }) => {
   const resetUrl = buildPasswordResetUrl(token);
   const customerName = pickStr(user?.name) || pickStr(user?.email) || "Вітаємо";
