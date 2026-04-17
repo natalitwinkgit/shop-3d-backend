@@ -2,6 +2,7 @@ import fs from "fs";
 import multer from "multer";
 import path from "path";
 import mongoose from "mongoose";
+import UserAddress from "../models/UserAddress.js";
 
 const avatarUploadDir = path.join(process.cwd(), "uploads", "avatars");
 
@@ -125,4 +126,59 @@ export const normalizeAddresses = (addresses = []) => {
   return withPrimary
     .sort((left, right) => left.sortOrder - right.sortOrder)
     .map(({ sortOrder, ...address }) => address);
+};
+
+const formatAddressDoc = (addressDoc = {}) => ({
+  id: String(addressDoc._id || addressDoc.id || ""),
+  _id: String(addressDoc._id || addressDoc.id || ""),
+  label: pickStr(addressDoc.label),
+  city: pickStr(addressDoc.city),
+  addressLine: pickStr(addressDoc.addressLine),
+  comment: pickStr(addressDoc.comment),
+  isPrimary: !!addressDoc.isPrimary,
+  sortOrder: Number(addressDoc.sortOrder || 0),
+  createdAt: addressDoc.createdAt || null,
+  updatedAt: addressDoc.updatedAt || null,
+});
+
+export const listUserAddresses = async (userId, { legacyAddresses = [] } = {}) => {
+  if (!userId) return [];
+
+  let docs = await UserAddress.find({ user: userId }).sort({ sortOrder: 1, createdAt: 1 }).lean();
+
+  if (!docs.length && Array.isArray(legacyAddresses) && legacyAddresses.length) {
+    docs = await replaceUserAddresses(userId, legacyAddresses);
+  }
+
+  return docs.map(formatAddressDoc);
+};
+
+export const replaceUserAddresses = async (userId, addresses = []) => {
+  if (!userId) return [];
+
+  const normalized = normalizeAddresses(addresses);
+  await UserAddress.deleteMany({ user: userId });
+
+  if (!normalized.length) return [];
+
+  const docs = await UserAddress.insertMany(
+    normalized.map((address, index) => ({
+      user: userId,
+      label: address.label,
+      city: address.city,
+      addressLine: address.addressLine,
+      comment: address.comment,
+      isPrimary: !!address.isPrimary,
+      sortOrder: index,
+    })),
+    { ordered: true }
+  );
+
+  return docs.map((doc) => doc.toObject?.() || doc);
+};
+
+export const countUserAddresses = async (userId, { legacyAddresses = [] } = {}) => {
+  if (!userId) return 0;
+  const count = await UserAddress.countDocuments({ user: userId });
+  return count || normalizeAddresses(legacyAddresses).length;
 };
