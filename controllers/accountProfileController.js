@@ -1,9 +1,11 @@
 import User from "../models/userModel.js";
 import { buildPublicUserResponse, getAdminUserDetail } from "../services/userProfileService.js";
+import { getLoyaltyAccount } from "../services/loyaltyService.js";
 import {
   getUploadedAvatarPath,
-  normalizeAddresses,
+  listUserAddresses,
   removeUploadByPublicPath,
+  replaceUserAddresses,
 } from "../services/accountProfileService.js";
 import { assertActorCanManageUserProfile } from "../admin/lib/adminShared.js";
 
@@ -70,7 +72,8 @@ export const getMyAddresses = async (req, res) => {
     const user = await loadUserById(getCurrentUserId(req));
     if (!user) return res.status(401).json({ message: "Unauthorized" });
 
-    return res.json({ addresses: normalizeAddresses(user.addresses || []) });
+    const addresses = await listUserAddresses(user._id, { legacyAddresses: user.addresses || [] });
+    return res.json({ addresses });
   } catch (error) {
     console.error("[PROFILE addresses GET]", error);
     return res.status(500).json({ message: "Addresses load failed" });
@@ -82,13 +85,40 @@ export const setMyAddresses = async (req, res) => {
     const user = await loadUserById(getCurrentUserId(req));
     if (!user) return res.status(401).json({ message: "Unauthorized" });
 
-    user.addresses = normalizeAddresses(req.body?.addresses);
+    const addresses = await replaceUserAddresses(user._id, req.body?.addresses);
+    user.addresses = [];
     await user.save();
 
-    return res.json({ addresses: normalizeAddresses(user.addresses || []) });
+    return res.json({ addresses: addresses.map((address) => ({
+      id: String(address._id || address.id || ""),
+      _id: String(address._id || address.id || ""),
+      label: address.label || "",
+      city: address.city || "",
+      addressLine: address.addressLine || "",
+      comment: address.comment || "",
+      isPrimary: !!address.isPrimary,
+      sortOrder: Number(address.sortOrder || 0),
+      createdAt: address.createdAt || null,
+      updatedAt: address.updatedAt || null,
+    })) });
   } catch (error) {
     console.error("[PROFILE addresses PUT]", error);
     return res.status(error.statusCode || 500).json({ message: error.message || "Addresses update failed" });
+  }
+};
+
+export const getMyLoyalty = async (req, res) => {
+  try {
+    const userId = getCurrentUserId(req);
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+    const loyalty = await getLoyaltyAccount(userId, { limit: req.query?.limit });
+    if (!loyalty) return res.status(404).json({ message: "Loyalty card not found" });
+
+    return res.json(loyalty);
+  } catch (error) {
+    console.error("[PROFILE loyalty GET]", error);
+    return res.status(error.statusCode || 500).json({ message: error.message || "Loyalty load failed" });
   }
 };
 

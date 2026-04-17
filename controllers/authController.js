@@ -14,11 +14,14 @@ import {
   buildPublicUserResponse,
   markUserOffline,
 } from "../services/userProfileService.js";
+import { ensureLoyaltyCard } from "../services/loyaltyService.js";
 import {
   PASSWORD_RESET_PUBLIC_MESSAGE,
   requestPasswordReset,
   resetPasswordWithToken,
 } from "../services/passwordResetService.js";
+import { listUserLikes, toggleUserLike } from "../services/likeService.js";
+import { listUserAddresses } from "../services/accountProfileService.js";
 
 const signToken = (userId, req = null) => {
   const payload = { id: userId };
@@ -33,6 +36,21 @@ const pickStr = (value) => String(value || "").trim();
 const normalizeEmail = (value) => pickStr(value).toLowerCase();
 const sendError = (res, statusCode, code, message) =>
   res.status(statusCode).json({ code, message });
+
+const buildUserWithRelations = async (userDoc) => {
+  const payload = buildPublicUserResponse(userDoc);
+  const [likes, addresses] = await Promise.all([
+    listUserLikes(userDoc?._id, { legacyLikes: userDoc?.likes || [] }),
+    listUserAddresses(userDoc?._id, { legacyAddresses: userDoc?.addresses || [] }),
+  ]);
+
+  return {
+    ...payload,
+    likes,
+    likesCount: likes.length,
+    addresses,
+  };
+};
 
 export const registerUser = async (req, res) => {
   const name = pickStr(req.body?.name);
@@ -95,10 +113,12 @@ export const registerUser = async (req, res) => {
       isOnline: false,
       presence: "offline",
     });
+    await ensureLoyaltyCard(user._id, { userDoc: user });
+    const freshUser = await User.findById(user._id).select("-passwordHash -password");
 
     return res.status(201).json({
       token: signToken(user._id, req),
-      user: buildPublicUserResponse(user),
+      user: await buildUserWithRelations(freshUser || user),
     });
   } catch (error) {
     logger.error("AUTH register failed", {}, error);
@@ -153,11 +173,12 @@ export const loginUser = async (req, res) => {
       }
     );
 
+    await ensureLoyaltyCard(user._id);
     const freshUser = await User.findById(user._id).select("-passwordHash -password");
 
     return res.status(200).json({
       token: signToken(user._id, req),
-      user: buildPublicUserResponse(freshUser),
+      user: await buildUserWithRelations(freshUser),
     });
   } catch (error) {
     logger.error("AUTH login failed", {}, error);
@@ -179,9 +200,11 @@ export const getMe = async (req, res) => {
     if (user.status === "banned") {
       return sendError(res, 403, ERROR_CODES.FORBIDDEN, "Your account is banned");
     }
+    await ensureLoyaltyCard(user._id, { userDoc: user });
+    const freshUser = await User.findById(user._id).select("-passwordHash -password");
 
     return res.status(200).json({
-      user: buildPublicUserResponse(user),
+      user: await buildUserWithRelations(freshUser || user),
     });
   } catch (error) {
     logger.error("AUTH me failed", {}, error);
@@ -236,7 +259,7 @@ export const updateMe = async (req, res) => {
     await user.save();
 
     return res.json({
-      user: buildPublicUserResponse(user),
+      user: await buildUserWithRelations(user),
     });
   } catch (error) {
     logger.error("AUTH updateMe failed", {}, error);
@@ -245,42 +268,45 @@ export const updateMe = async (req, res) => {
 };
 
 export const toggleLike = async (req, res) => {
-  const { productId, productName, productCategory, productImage, discount, price } =
-    req.body;
-  const targetId = productId || req.body._id || req.body.id;
+  const userId = req.user?._id || req.user?.id;
+  if (!userId) {
+    return sendError(res, 401, ERROR_CODES.UNAUTHORIZED, "Unauthorized");
+  }
 
+  const targetId = req.body?.productId || req.body?._id || req.body?.id || req.body?.product;
   if (!targetId) {
     return sendError(res, 400, ERROR_CODES.BAD_REQUEST, "productId is required");
   }
 
   try {
-    const user = await User.findById(req.user.id);
-    if (!user) return sendError(res, 404, ERROR_CODES.NOT_FOUND, "User not found");
-
-    const index = user.likes.findIndex(
-      (like) => String(like.productId) === String(targetId)
-    );
-
-    if (index > -1) {
-      user.likes.splice(index, 1);
-    } else {
-      user.likes.push({
-        productId: targetId,
-        productName: productName || "Unknown",
-        productCategory: productCategory || "",
-        productImage: productImage || "",
-        discount: Number(discount || 0),
-        price: Number(price || 0),
-      });
-    }
-
-    await user.save();
-    const updatedUser = await User.findById(req.user.id).select(
-      "-passwordHash -password"
-    );
-    return res.status(200).json(buildPublicUserResponse(updatedUser));
+    const result = await toggleUserLike(userId, req.body || {});
+    return res.status(200).json({
+      liked: result.liked,
+      likes: result.likes,
+      user: {
+        ...(await buildUserWithRelations(await User.findById(userId).select("-passwordHash -password"))),
+        likes: result.likes,
+        likesCount: result.likes.length,
+      },
+    });
   } catch (error) {
     logger.error("AUTH toggleLike failed", {}, error);
+    return sendError(res, error.statusCode || 500, ERROR_CODES.SERVER_ERROR, error.message || "Server error");
+  }
+};
+
+export const listMyLikes = async (req, res) => {
+  const userId = req.user?._id || req.user?.id;
+  if (!userId) {
+    return sendError(res, 401, ERROR_CODES.UNAUTHORIZED, "Unauthorized");
+  }
+
+  try {
+    const user = await User.findById(userId).select("likes").lean();
+    const likes = await listUserLikes(userId, { legacyLikes: user?.likes || [] });
+    return res.json({ likes, items: likes, total: likes.length });
+  } catch (error) {
+    logger.error("AUTH listMyLikes failed", {}, error);
     return sendError(res, 500, ERROR_CODES.SERVER_ERROR, "Server error");
   }
 };
