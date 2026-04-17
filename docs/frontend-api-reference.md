@@ -62,9 +62,20 @@ Source of truth: current mounted routes in `index.js` and route definitions in `
 
 - `POST /api/auth/forgot-password`
   - body: `{ "email": "user@example.com" }`
+  - response is always generic: `{ "ok": true, "message": "If the account exists, reset instructions will be sent" }`
+  - if the account exists, backend emails a link to `PASSWORD_RESET_URL?token=...`
 
 - `POST /api/auth/reset-password`
-  - placeholder route, currently returns success stub
+  - body:
+  ```json
+  {
+    "token": "reset-token-from-email",
+    "password": "new-secret123",
+    "confirmPassword": "new-secret123"
+  }
+  ```
+  - response: `{ "ok": true, "message": "Password has been reset" }`
+  - token is one-time and expires after 1 hour
 
 ### Products / Catalog
 
@@ -238,13 +249,9 @@ Hydrated product response example:
     "meta": {}
   }
   ```
-  - `GET /api/i18n-missing` returns AI translation status/config summary
-  - `POST /api/i18n-missing` uses Gemini to auto-generate `ua` and `en` values for the key and saves them into MongoDB `translations`
-  - Gemini key/model can now come either from backend env or from admin dashboard settings stored in MongoDB
-  - supported `lang`: `uk`/`ua`, `en`
-  - optional fields: `defaultValue`, `value`, `text`, `fallback`, `force`
-  - if both translations already exist and `force` is not set, backend returns existing values without a new AI call
-  - if AI translation fails, backend still stores a missing translation report in MongoDB and returns `202`; when `defaultValue` is provided it is also saved into the source language translation doc immediately
+  - missing-translation auto-generation is disabled
+  - `GET /api/i18n-missing` returns disabled status
+  - `POST /api/i18n-missing` is a compatibility no-op; it returns `200` and does not rate-limit, call AI, or write to MongoDB
 
 ## Authenticated User API
 
@@ -648,7 +655,7 @@ Notes:
 
 - AI keys are stored in MongoDB for dashboard management and masked in responses
 - backend uses stored DB AI settings first, then falls back to env when DB value is absent
-- automatic i18n translation requires Gemini key availability, even if admin chat provider is switched to OpenAI
+- automatic i18n missing-translation generation is disabled
 - backend never returns raw API keys, only `hasApiKey` and `maskedApiKey`
 
 ### AI Admin

@@ -39,6 +39,9 @@
 - DELETE /api/products/:id
 - GET /api/products/stats
 
+### Product Questions
+- POST /api/product-questions
+
 ### Categories
 - GET /api/categories
 - GET /api/categories/:category/children
@@ -126,6 +129,9 @@
 - GET /api/i18n-missing
 - POST /api/i18n-missing
 
+Notes:
+- Missing-translation auto-generation is disabled. These endpoints are kept as no-op compatibility routes and do not rate-limit or call AI.
+
 ---
 
 ## Admin API Endpoints
@@ -201,6 +207,13 @@ Notes:
 - PATCH /api/admin/orders/:id
 - POST /api/admin/orders/:id/cancel
 - DELETE /api/admin/orders/:id
+
+### Admin Product Questions
+- GET /api/admin/product-questions
+- GET /api/admin/product-questions/:id
+- POST /api/admin/product-questions/:id/reply
+- PATCH /api/admin/product-questions/:id/status
+- PATCH /api/admin/product-questions/:id/read
 
 ### Admin Locations
 - GET /api/admin/locations
