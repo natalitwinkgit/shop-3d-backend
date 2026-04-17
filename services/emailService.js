@@ -103,21 +103,47 @@ export const buildProductQuestionReplyEmail = ({ question, replyMessage }) => {
     .filter((line, index, lines) => line || lines[index - 1] !== "")
     .join("\n");
 
+  const safeName = escapeHtml(customerName);
+  const safeProductLine = escapeHtml(productLine);
+  const safeProductUrl = escapeHtml(productUrl);
+  const safeOriginal = escapeHtml(originalMessage).replace(/\n/g, "<br />");
+  const safeAnswer = escapeHtml(answer).replace(/\n/g, "<br />");
+
   const html = `
-    <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #1f2933;">
-      <p>${escapeHtml(customerName)},</p>
-      <p>Дякуємо за ваше питання. Нижче відповідь менеджера.</p>
-      <p><strong>Товар:</strong> ${escapeHtml(productLine)}</p>
-      ${
-        productUrl
-          ? `<p><a href="${escapeHtml(productUrl)}" target="_blank" rel="noreferrer">Переглянути товар</a></p>`
-          : ""
-      }
-      <hr style="border: 0; border-top: 1px solid #e5e7eb;" />
-      <p><strong>Ваше питання:</strong></p>
-      <p>${escapeHtml(originalMessage).replace(/\n/g, "<br />")}</p>
-      <p><strong>Відповідь:</strong></p>
-      <p>${escapeHtml(answer).replace(/\n/g, "<br />")}</p>
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">Відповідь менеджера на ваше питання щодо товару.</div>
+    <div style="margin:0;padding:0;background:#f4efe6;">
+      <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;background:#f4efe6;">
+        <tr>
+          <td align="center" style="padding:32px 16px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;max-width:620px;background:#fffaf2;border:1px solid #dfd2bf;">
+              <tr>
+                <td style="padding:28px 30px 18px;background:#2f1d13;color:#fffaf2;">
+                  <div style="font-family:Arial,sans-serif;font-size:12px;line-height:16px;letter-spacing:2px;text-transform:uppercase;color:#d5842f;">MebliHub</div>
+                  <h1 style="margin:12px 0 0;font-family:Arial,sans-serif;font-size:28px;line-height:34px;font-weight:700;color:#fffaf2;">Відповідь на питання</h1>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:30px;font-family:Arial,sans-serif;color:#2b211b;">
+                  <p style="margin:0 0 14px;font-size:16px;line-height:24px;">${safeName},</p>
+                  <p style="margin:0 0 18px;font-size:16px;line-height:24px;">Дякуємо за ваше питання. Нижче відповідь менеджера.</p>
+                  <p style="margin:0 0 12px;font-size:15px;"><strong>Товар:</strong> ${safeProductLine}</p>
+                  ${productUrl ? `<table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 0 16px;"><tr><td bgcolor="#c96a00" style="border:1px solid #9f5200;"><a href="${safeProductUrl}" target="_blank" rel="noreferrer" style="display:inline-block;padding:12px 18px;font-family:Arial,sans-serif;font-size:14px;line-height:18px;font-weight:700;color:#ffffff;text-decoration:none;text-transform:uppercase;">Переглянути товар</a></td></tr></table>` : ""}
+                  <hr style="border: 0; border-top: 1px solid #dfdcd6; margin: 18px 0;" />
+                  <p style="margin:0 0 8px;font-size:14px;line-height:20px;"><strong>Ваше питання:</strong></p>
+                  <p style="margin:0 0 14px;font-size:14px;line-height:20px;color:#3a2a1f;">${safeOriginal}</p>
+                  <p style="margin:0 0 8px;font-size:14px;line-height:20px;"><strong>Відповідь:</strong></p>
+                  <p style="margin:0;font-size:14px;line-height:20px;color:#3a2a1f;">${safeAnswer}</p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:18px 30px;background:#efe4d4;font-family:Arial,sans-serif;color:#6c5e53;font-size:12px;line-height:18px;">
+                  Це автоматичний лист MebliHub. Відповідати на нього не потрібно.
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
     </div>
   `;
 
