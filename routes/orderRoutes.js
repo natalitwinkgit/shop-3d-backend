@@ -13,7 +13,11 @@ import {
   adminListOrders,
   adminGetOrder,
   adminPatchOrder,
+  adminUpdateOrderNote,
+  adminUpdateOrderStatus,
+  adminScheduleOrder,
   adminCancelOrder,
+  adminRestoreOrder,
   adminDeleteOrder,
 } from "../controllers/orderController.js";
 
@@ -67,7 +71,11 @@ router.get("/my/:id", protect, getMyOrder);
 router.get("/", protect, admin, adminListOrders);
 router.get("/:id", protect, admin, adminGetOrder);
 router.patch("/:id", protect, admin, adminPatchOrder);
+router.patch("/:id/status", protect, admin, adminUpdateOrderStatus);
+router.patch("/:id/note", protect, admin, adminUpdateOrderNote);
+router.patch("/:id/schedule", protect, admin, adminScheduleOrder);
 router.post("/:id/cancel", protect, admin, adminCancelOrder);
+router.post("/:id/restore", protect, admin, adminRestoreOrder);
 router.delete("/:id", protect, admin, adminDeleteOrder);
 
 export default router;

@@ -3,6 +3,7 @@ import { protect } from "../middleware/authMiddleware.js";
 import {
   deleteMyAvatar,
   getMyAddresses,
+  getMyLoyalty,
   setMyAddresses,
   updateMyAvatar,
 } from "../controllers/accountProfileController.js";
@@ -17,6 +18,7 @@ import {
 const router = express.Router();
 
 router.get("/me/addresses", protect, getMyAddresses);
+router.get("/me/loyalty", protect, getMyLoyalty);
 router.put("/me/addresses", protect, setMyAddresses);
 router.patch("/me/addresses", protect, setMyAddresses);
 router.patch("/me/avatar", protect, avatarUploadFields, updateMyAvatar);

@@ -12,6 +12,7 @@ import {
 import {
   deleteMyAvatar,
   getMyAddresses,
+  getMyLoyalty,
   setMyAddresses,
   updateMyAvatar,
 } from "../controllers/accountProfileController.js";
@@ -89,6 +90,7 @@ router.post(
 router.get("/me", protect, getMe);
 router.patch("/me", protect, updateMe);
 router.get("/me/addresses", protect, getMyAddresses);
+router.get("/me/loyalty", protect, getMyLoyalty);
 router.put("/me/addresses", protect, setMyAddresses);
 router.patch("/me/addresses", protect, setMyAddresses);
 router.patch("/me/avatar", protect, avatarUploadFields, updateMyAvatar);

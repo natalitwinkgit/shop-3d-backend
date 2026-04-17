@@ -6,6 +6,10 @@ import {
   adminGetOrder,
   adminListOrders,
   adminPatchOrder,
+  adminRestoreOrder,
+  adminScheduleOrder,
+  adminUpdateOrderNote,
+  adminUpdateOrderStatus,
 } from "../../controllers/orderController.js";
 
 const router = Router();
@@ -13,7 +17,11 @@ const router = Router();
 router.get("/orders", adminListOrders);
 router.get("/orders/:id", adminGetOrder);
 router.patch("/orders/:id", adminPatchOrder);
+router.patch("/orders/:id/status", adminUpdateOrderStatus);
+router.patch("/orders/:id/note", adminUpdateOrderNote);
+router.patch("/orders/:id/schedule", adminScheduleOrder);
 router.post("/orders/:id/cancel", adminCancelOrder);
+router.post("/orders/:id/restore", adminRestoreOrder);
 router.delete("/orders/:id", adminDeleteOrder);
 
 export default router;
