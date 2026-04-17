@@ -139,30 +139,88 @@ export const buildPasswordResetEmail = ({ user, token, expiresAt }) => {
       }).format(new Date(expiresAt))
     : "";
 
-  const subject = "Відновлення пароля";
+  const subject = "Відновлення пароля MebliHub";
   const text = [
     `${customerName},`,
     "",
-    "Ви запросили відновлення пароля.",
-    `Перейдіть за посиланням і введіть новий пароль: ${resetUrl}`,
-    expiresText ? `Посилання діє до: ${expiresText}` : "",
+    "Ми отримали запит на відновлення пароля до вашого акаунта MebliHub.",
+    "Щоб створити новий пароль, відкрийте це посилання:",
+    resetUrl,
     "",
-    "Якщо ви не запитували відновлення пароля, просто проігноруйте цей лист.",
+    expiresText ? `Посилання активне до: ${expiresText}` : "",
+    "",
+    "Якщо ви не запитували відновлення пароля, нічого робити не потрібно. Старий пароль залишиться без змін.",
   ]
     .filter(Boolean)
     .join("\n");
 
+  const safeName = escapeHtml(customerName);
+  const safeResetUrl = escapeHtml(resetUrl);
+  const safeExpiresText = escapeHtml(expiresText);
+
   const html = `
-    <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #1f2933;">
-      <p>${escapeHtml(customerName)},</p>
-      <p>Ви запросили відновлення пароля.</p>
-      <p>
-        <a href="${escapeHtml(resetUrl)}" target="_blank" rel="noreferrer">
-          Встановити новий пароль
-        </a>
-      </p>
-      ${expiresText ? `<p>Посилання діє до: ${escapeHtml(expiresText)}</p>` : ""}
-      <p>Якщо ви не запитували відновлення пароля, просто проігноруйте цей лист.</p>
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">
+      Встановіть новий пароль для акаунта MebliHub. Посилання тимчасове.
+    </div>
+    <div style="margin:0;padding:0;background:#f4efe6;">
+      <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;background:#f4efe6;">
+        <tr>
+          <td align="center" style="padding:32px 16px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;max-width:620px;background:#fffaf2;border:1px solid #dfd2bf;">
+              <tr>
+                <td style="padding:28px 30px 18px;background:#2f1d13;color:#fffaf2;">
+                  <div style="font-family:Arial,sans-serif;font-size:12px;line-height:16px;letter-spacing:2px;text-transform:uppercase;color:#d5842f;">
+                    MebliHub
+                  </div>
+                  <h1 style="margin:12px 0 0;font-family:Arial,sans-serif;font-size:28px;line-height:34px;font-weight:700;color:#fffaf2;">
+                    Відновлення пароля
+                  </h1>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:30px;font-family:Arial,sans-serif;color:#2b211b;">
+                  <p style="margin:0 0 14px;font-size:16px;line-height:24px;">${safeName},</p>
+                  <p style="margin:0 0 22px;font-size:16px;line-height:24px;">
+                    Ми отримали запит на відновлення пароля до вашого акаунта. Натисніть кнопку нижче і задайте новий пароль.
+                  </p>
+                  <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 0 24px;">
+                    <tr>
+                      <td bgcolor="#c96a00" style="border:1px solid #9f5200;">
+                        <a href="${safeResetUrl}" target="_blank" rel="noreferrer" style="display:inline-block;padding:14px 22px;font-family:Arial,sans-serif;font-size:15px;line-height:18px;font-weight:700;color:#ffffff;text-decoration:none;text-transform:uppercase;">
+                          Створити новий пароль
+                        </a>
+                      </td>
+                    </tr>
+                  </table>
+                  ${
+                    safeExpiresText
+                      ? `<p style="margin:0 0 18px;font-size:14px;line-height:22px;color:#5f5148;">
+                          Посилання активне до <strong style="color:#2b211b;">${safeExpiresText}</strong>.
+                        </p>`
+                      : ""
+                  }
+                  <div style="margin:24px 0;padding:16px 18px;background:#f7ead8;border-left:4px solid #c96a00;">
+                    <p style="margin:0;font-size:14px;line-height:22px;color:#3a2a1f;">
+                      Якщо ви не запитували відновлення пароля, просто не відкривайте це посилання. Старий пароль залишиться без змін.
+                    </p>
+                  </div>
+                  <p style="margin:0 0 8px;font-size:13px;line-height:20px;color:#6c5e53;">
+                    Якщо кнопка не відкривається, скопіюйте це посилання в браузер:
+                  </p>
+                  <p style="margin:0;font-size:13px;line-height:20px;word-break:break-all;">
+                    <a href="${safeResetUrl}" target="_blank" rel="noreferrer" style="color:#9f5200;text-decoration:underline;">${safeResetUrl}</a>
+                  </p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:18px 30px;background:#efe4d4;font-family:Arial,sans-serif;color:#6c5e53;font-size:12px;line-height:18px;">
+                  Це автоматичний лист MebliHub. Відповідати на нього не потрібно.
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
     </div>
   `;
 
