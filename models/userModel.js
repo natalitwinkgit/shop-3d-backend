@@ -243,7 +243,7 @@ const userSchema = new mongoose.Schema(
     lastPage: { type: String, default: "" },
     likes: [likeSchema],
     addresses: { type: [addressSchema], default: [] },
-    orders: { type: [orderSchema], default: [] },
+    orders: [{ type: mongoose.Schema.Types.ObjectId, ref: "Order" }],
     loyalty: { type: loyaltySchema, default: () => ({}) },
     rewards: { type: [rewardSchema], default: [] },
     resetCode: { type: String },
