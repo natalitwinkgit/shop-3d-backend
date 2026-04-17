@@ -33,6 +33,49 @@ Optional for multi-instance deployments:
 REDIS_URL=redis://<host>:6379
 ```
 
+## Password Reset
+
+Forgot-password flow:
+
+- `POST /api/auth/forgot-password` with `{ "email": "user@example.com" }`
+- backend generates a one-time reset token, stores only its SHA-256 hash, and emails a frontend reset link
+- `POST /api/auth/reset-password` with `{ "token": "...", "password": "...", "confirmPassword": "..." }`
+- token expires after 1 hour and is cleared after successful reset
+
+Configure the frontend reset page URL and SMTP:
+
+```
+CLIENT_URL=http://localhost:5173
+PASSWORD_RESET_URL=http://localhost:5173/reset-password
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASS=
+SMTP_FROM=
+SMTP_SECURE=false
+```
+
+## Product Questions
+
+Public product questions are available at `POST /api/product-questions`.
+Admin management is available under `/api/admin/product-questions`.
+
+Reply emails use SMTP only when these variables are configured:
+
+```
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASS=
+SMTP_FROM=
+SMTP_SECURE=false
+```
+
+If SMTP is not configured or an email send fails, the admin reply is still saved and
+the response includes `email.sent: false`.
+
+See `docs/product-questions.md` for payload examples.
+
 ## Live Voice Chat (MVP backend)
 
 Added endpoint:

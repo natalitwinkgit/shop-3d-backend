@@ -14,6 +14,11 @@ import {
   buildPublicUserResponse,
   markUserOffline,
 } from "../services/userProfileService.js";
+import {
+  PASSWORD_RESET_PUBLIC_MESSAGE,
+  requestPasswordReset,
+  resetPasswordWithToken,
+} from "../services/passwordResetService.js";
 
 const signToken = (userId, req = null) => {
   const payload = { id: userId };
@@ -287,17 +292,42 @@ export const forgotPassword = async (req, res) => {
   }
 
   try {
-    await User.findOne({ email }).select("_id").lean();
+    await requestPasswordReset({ email });
     return res.status(200).json({
-      message: "If the account exists, reset instructions will be sent",
+      ok: true,
+      message: PASSWORD_RESET_PUBLIC_MESSAGE,
     });
   } catch (error) {
-    return sendError(res, 500, ERROR_CODES.SERVER_ERROR, "Server error");
+    logger.error("AUTH forgotPassword failed", {}, error);
+    return sendError(
+      res,
+      error.statusCode || 500,
+      error.code || ERROR_CODES.SERVER_ERROR,
+      error.message || "Server error"
+    );
   }
 };
 
-export const resetPassword = async (_req, res) => {
-  return res.status(200).json({ message: "Password reset logic placeholder" });
+export const resetPassword = async (req, res) => {
+  try {
+    await resetPasswordWithToken({
+      token: req.body?.token || req.query?.token,
+      password: req.body?.password,
+      confirmPassword: req.body?.confirmPassword,
+    });
+
+    return res.status(200).json({
+      ok: true,
+      message: "Password has been reset",
+    });
+  } catch (error) {
+    return sendError(
+      res,
+      error.statusCode || 500,
+      error.code || ERROR_CODES.SERVER_ERROR,
+      error.message || "Server error"
+    );
+  }
 };
 
 export const logoutUser = async (req, res) => {

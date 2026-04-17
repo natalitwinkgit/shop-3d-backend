@@ -14,6 +14,11 @@ const normalizeSessionBindingMode = (value) => {
   return "report";
 };
 
+const toOptionalPort = (value) => {
+  const parsed = Number(value || 0);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
+};
+
 export const env = {
   nodeEnv: String(process.env.NODE_ENV || "development"),
   port: Number(process.env.PORT || 5000),
@@ -23,7 +28,21 @@ export const env = {
   jwtSecret: String(process.env.JWT_SECRET || "").trim(),
   allowCookieAuth: toFlag(process.env.ALLOW_COOKIE_AUTH, false),
   redisUrl: String(process.env.REDIS_URL || "").trim(),
+  publicStoreUrl: String(process.env.PUBLIC_STORE_URL || "").trim(),
+  clientUrl: String(process.env.CLIENT_URL || "").trim(),
+  passwordResetUrl: String(process.env.PASSWORD_RESET_URL || "").trim(),
   sessionBindingMode: normalizeSessionBindingMode(process.env.SESSION_BINDING_MODE),
   sessionBindingEnabled: toFlag(process.env.SESSION_BINDING_ENABLED, false),
   cspEnabled: toFlag(process.env.CSP_ENABLED ?? "true", true),
+  smtp: {
+    host: String(process.env.SMTP_HOST || "").trim(),
+    port: toOptionalPort(process.env.SMTP_PORT),
+    user: String(process.env.SMTP_USER || "").trim(),
+    pass: String(process.env.SMTP_PASS || "").trim(),
+    from: String(process.env.SMTP_FROM || "").trim(),
+    secure:
+      String(process.env.SMTP_SECURE || "").trim() === ""
+        ? undefined
+        : toFlag(process.env.SMTP_SECURE, false),
+  },
 };

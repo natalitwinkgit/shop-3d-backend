@@ -247,6 +247,23 @@ const userSchema = new mongoose.Schema(
     loyalty: { type: loyaltySchema, default: () => ({}) },
     rewards: { type: [rewardSchema], default: [] },
     resetCode: { type: String },
+    resetPasswordTokenHash: {
+      type: String,
+      default: "",
+      select: false,
+      index: true,
+    },
+    resetPasswordExpiresAt: {
+      type: Date,
+      default: null,
+      select: false,
+      index: true,
+    },
+    resetPasswordRequestedAt: {
+      type: Date,
+      default: null,
+      select: false,
+    },
   },
   { timestamps: true }
 );

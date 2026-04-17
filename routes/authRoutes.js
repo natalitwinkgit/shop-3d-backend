@@ -68,6 +68,12 @@ const forgotPasswordSchema = z.object({
   email: z.string().trim().email(),
 });
 
+const resetPasswordSchema = z.object({
+  token: z.string().trim().min(20),
+  password: z.string().min(6),
+  confirmPassword: z.string().min(6),
+});
+
 router.post(
   "/register",
   validateZodBody(registerSchema),
@@ -96,7 +102,12 @@ router.post(
   forgotPasswordRateLimit,
   forgotPassword
 );
-router.post("/reset-password", resetPasswordRateLimit, resetPassword);
+router.post(
+  "/reset-password",
+  validateZodBody(resetPasswordSchema),
+  resetPasswordRateLimit,
+  resetPassword
+);
 
 // ❌ ВИДАЛИ АБО ЗАКОМЕНТУЙ РЯДКИ З getAdminDashboard
 // router.get("/admin/dashboard", protect, protectAdmin, getAdminDashboard); <--- ЦЕ БУЛО ПРИЧИНОЮ ПОМИЛКИ
