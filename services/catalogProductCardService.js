@@ -1,28 +1,6 @@
+import { buildProductApiUrl, buildStorefrontProductUrl } from "./storefrontUrlService.js";
+
 const pickStr = (value) => String(value ?? "").trim();
-
-const trimTrailingSlash = (value) => String(value || "").replace(/\/+$/, "");
-
-const getStorefrontBaseUrl = () => {
-  const explicitBaseUrl = trimTrailingSlash(process.env.PUBLIC_STORE_URL);
-  if (explicitBaseUrl) return explicitBaseUrl;
-
-  const clientUrl = String(process.env.CLIENT_URL || "")
-    .split(",")
-    .map((item) => item.trim())
-    .find(Boolean);
-
-  return trimTrailingSlash(clientUrl);
-};
-
-const buildStorefrontProductUrl = (slug) => {
-  const safeSlug = pickStr(slug);
-  if (!safeSlug) return "";
-
-  const baseUrl = getStorefrontBaseUrl();
-  if (!baseUrl) return `/products/${encodeURIComponent(safeSlug)}`;
-
-  return `${baseUrl}/products/${encodeURIComponent(safeSlug)}`;
-};
 
 const getProductDisplayName = (productDoc) =>
   pickStr(productDoc?.title) ||
@@ -45,8 +23,8 @@ export const buildProductCards = (items = [], { limit = 1 } = {}) =>
       finalPrice: Number(item.finalPrice || item.price || 0),
       currency: "UAH",
       image: pickStr(item.image || item.primaryImage || item.images?.[0] || ""),
-      storefrontUrl: pickStr(item.storefrontUrl) || buildStorefrontProductUrl(item.slug),
-      apiUrl: pickStr(item.apiUrl) || `/api/products/by-slug/${encodeURIComponent(pickStr(item.slug))}`,
+      storefrontUrl: buildStorefrontProductUrl(item) || pickStr(item.storefrontUrl),
+      apiUrl: pickStr(item.apiUrl) || buildProductApiUrl(item),
       inStock: !!item.inStock,
       stockQty: Number(item.stockQty || 0),
       colorKeys: Array.isArray(item.colorKeys) ? item.colorKeys : [],

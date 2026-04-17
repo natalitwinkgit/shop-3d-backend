@@ -29,7 +29,10 @@ test("catalog replies do not include raw storefront links", () => {
 test("product cards expose a clickable storefront url", () => {
   const cards = buildProductCards([
     {
+      id: "69dd898b15930cfa4f90244c",
       slug: "sakura-gaming-pro-chair",
+      category: "chairs",
+      subCategory: "gaming",
       title: 'Крісло ігрове "Sakura Gaming Pro"',
       price: 20615,
       finalPrice: 20615,
@@ -40,7 +43,8 @@ test("product cards expose a clickable storefront url", () => {
 
   assert.equal(cards.length, 1);
   assert.equal(cards[0].slug, "sakura-gaming-pro-chair");
-  assert.ok(cards[0].storefrontUrl.endsWith("/products/sakura-gaming-pro-chair"));
+  assert.ok(cards[0].storefrontUrl.endsWith("/catalog/chairs/gaming/69dd898b15930cfa4f90244c"));
+  assert.equal(cards[0].apiUrl, "/api/products/69dd898b15930cfa4f90244c");
   assert.equal(cards[0].title, 'Крісло ігрове "Sakura Gaming Pro"');
   assert.equal(cards[0].currency, "UAH");
 });

@@ -27,6 +27,10 @@ import {
   isCatalogProductQuery,
   searchCatalogProducts,
 } from "./catalogSearchService.js";
+import {
+  buildProductApiUrl,
+  buildStorefrontProductUrl,
+} from "./storefrontUrlService.js";
 
 let openaiClient = null;
 let openaiClientApiKey = "";
@@ -156,26 +160,6 @@ const buildEffectivePriceExpr = () => ({
   ],
 });
 
-const trimTrailingSlash = (value) => String(value || "").replace(/\/+$/, "");
-
-const getStorefrontBaseUrl = () => {
-  const explicitBaseUrl = trimTrailingSlash(process.env.PUBLIC_STORE_URL);
-  if (explicitBaseUrl) return explicitBaseUrl;
-
-  const clientUrl = parseList(process.env.CLIENT_URL)[0];
-  return trimTrailingSlash(clientUrl);
-};
-
-const buildStorefrontProductUrl = (slug) => {
-  const safeSlug = pickStr(slug);
-  if (!safeSlug) return "";
-
-  const baseUrl = getStorefrontBaseUrl();
-  if (!baseUrl) return `/products/${safeSlug}`;
-
-  return `${baseUrl}/products/${encodeURIComponent(safeSlug)}`;
-};
-
 const formatMoneyUa = (value) => {
   const amount = Number(value || 0);
   return new Intl.NumberFormat("uk-UA", {
@@ -204,8 +188,8 @@ const buildProductCards = (items) =>
       finalPrice: Number(item.finalPrice || item.price || 0),
       currency: "UAH",
       image: pickStr(item.image || item.primaryImage || item.images?.[0] || ""),
-      storefrontUrl: pickStr(item.storefrontUrl) || buildStorefrontProductUrl(item.slug),
-      apiUrl: pickStr(item.apiUrl) || `/api/products/by-slug/${encodeURIComponent(pickStr(item.slug))}`,
+      storefrontUrl: buildStorefrontProductUrl(item) || pickStr(item.storefrontUrl),
+      apiUrl: pickStr(item.apiUrl) || buildProductApiUrl(item),
       inStock: !!item.inStock,
       stockQty: Number(item.stockQty || 0),
       colorKeys: Array.isArray(item.colorKeys) ? item.colorKeys : [],
@@ -717,8 +701,8 @@ const toProductSummary = (productDoc) => ({
   status: productDoc.status || "",
   primaryImage: Array.isArray(productDoc.images) ? productDoc.images[0] || "" : "",
   images: Array.isArray(productDoc.images) ? productDoc.images.slice(0, 3) : [],
-  apiUrl: `/api/products/by-slug/${encodeURIComponent(productDoc.slug || "")}`,
-  storefrontUrl: buildStorefrontProductUrl(productDoc.slug || ""),
+  apiUrl: buildProductApiUrl(productDoc),
+  storefrontUrl: buildStorefrontProductUrl(productDoc),
 });
 
 const buildAiInstructions = ({ chatUser, currentAdmin, additionalInstructions, sendEnabled }) => {

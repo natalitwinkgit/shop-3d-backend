@@ -2,6 +2,7 @@ import Product from "../models/Product.js";
 import { findColors } from "./colorService.js";
 import { attachColorReferencesToProducts } from "./productColorReferenceService.js";
 import { attachProductInventoryAvailability } from "./productInventoryAvailabilityService.js";
+import { buildProductApiUrl, buildStorefrontProductUrl } from "./storefrontUrlService.js";
 
 const pickStr = (value) => String(value ?? "").trim();
 
@@ -203,19 +204,6 @@ const getProductName = (product = {}) =>
   pickStr(product?.name?.en) ||
   pickStr(product?.slug) ||
   "Товар";
-
-const getProductStorefrontUrl = (slug) => {
-  const safeSlug = pickStr(slug);
-  if (!safeSlug) return "";
-
-  const baseUrl = pickStr(process.env.PUBLIC_STORE_URL).replace(/\/+$/, "");
-  if (!baseUrl) return `/products/${encodeURIComponent(safeSlug)}`;
-
-  return `${baseUrl}/products/${encodeURIComponent(safeSlug)}`;
-};
-
-const getProductApiUrl = (slug) =>
-  `/api/products/by-slug/${encodeURIComponent(pickStr(slug))}`;
 
 const toFinalPrice = (product = {}) => {
   const price = Number(product?.price || 0);
@@ -555,8 +543,8 @@ const toProductSummary = (product = {}) => ({
   finalPrice: toFinalPrice(product),
   currency: "UAH",
   image: pickStr(product.primaryImage || product.previewImage || product.images?.[0] || ""),
-  storefrontUrl: getProductStorefrontUrl(product.slug),
-  apiUrl: getProductApiUrl(product.slug),
+  storefrontUrl: buildStorefrontProductUrl(product),
+  apiUrl: buildProductApiUrl(product),
   inStock: !!product.inStock,
   stockQty: Number(product.stockQty || 0),
   colorKeys: getColorKeys(product),
