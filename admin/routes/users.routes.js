@@ -98,9 +98,11 @@ const patchAdminUserProfileHandler = async (req, res) => {
 
     assertActorCanManageUserProfile(req.user, user);
 
-    if (req.body?.role !== undefined || req.body?.status !== undefined) {
-      return res.status(400).json({
-        message: "Use dedicated role/status endpoints",
+    const roleProvided = req.body?.role !== undefined;
+    const statusProvided = req.body?.status !== undefined;
+    if ((roleProvided || statusProvided) && req.user?.role !== "superadmin") {
+      return res.status(403).json({
+        message: "Only superadmin can update role or status",
       });
     }
 
@@ -145,6 +147,28 @@ const patchAdminUserProfileHandler = async (req, res) => {
 
     if (typeof req.body?.password === "string" && req.body.password.trim()) {
       user.passwordHash = await hashPassword(req.body.password.trim());
+    }
+
+    if (roleProvided) {
+      const role = normalizeUserRole(req.body?.role, "");
+      if (!role) {
+        return res.status(400).json({ message: "role is required" });
+      }
+      if (!USER_ROLES.includes(role)) {
+        return res.status(400).json({ message: "Invalid role" });
+      }
+      user.role = role;
+    }
+
+    if (statusProvided) {
+      const status = normalizeUserStatus(req.body?.status, "");
+      if (!status) {
+        return res.status(400).json({ message: "status is required" });
+      }
+      if (!USER_STATUSES.includes(status)) {
+        return res.status(400).json({ message: "Invalid status" });
+      }
+      user.status = status;
     }
 
     user.updatedBy = req.user?._id || null;
