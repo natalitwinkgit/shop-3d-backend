@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
+    "telegram:service": "node telegram-bot-service/index.js",
     "kill-port": "node scripts/killPort.cjs",
     "seed:colors": "node scripts/seedHtmlColors.js",
     "seed:catalog:reset": "node scripts/seedExtraCategories.js",
@@ -15,6 +16,8 @@
     "products:references:backfill": "node scripts/backfillProductReferences.js",
     "products:attributes:backfill": "node scripts/backfillProductAttributeDictionaries.js",
     "products:identity:backfill": "node scripts/backfillProductIdentity.js",
+    "planner-textures:migrate": "node scripts/migratePlannerTexturesBySurface.js",
+    "planner-textures:seed": "node scripts/seedPlannerTextures.js",
     "inventory:cleanup:orphans": "node scripts/cleanupOrphanInventory.js",
     "seed:test": "node scripts/seedTestData.js",
     "seed:test:clear": "node scripts/seedTestData.js --clear",
@@ -23,6 +26,7 @@
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
+    "cloudinary": "^2.9.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
@@ -36,6 +40,8 @@
     "pino": "^10.1.0",
     "redis": "^5.12.0",
     "socket.io": "^4.8.3",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1",
     "zod": "^4.1.12"
   },
   "devDependencies": {

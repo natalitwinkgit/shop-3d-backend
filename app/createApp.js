@@ -9,6 +9,12 @@ import path from "path";
 import { corsOptions } from "../config/cors.js";
 import { env } from "../config/env.js";
 import { createSocketServer } from "../sockets/chatSocket.js";
+import {
+  openApiDocument,
+  swaggerDocsSecurityHeaders,
+  swaggerUi,
+  swaggerUiOptions,
+} from "../docs/swagger/config.js";
 import { apiNotFoundHandler } from "./middleware/apiNotFound.js";
 import { globalErrorHandler } from "./middleware/globalErrorHandler.js";
 import { sanitizeRequestBody } from "./middleware/inputSecurity.js";
@@ -61,6 +67,15 @@ export const createApp = () => {
   }
 
   app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+  app.get("/api-docs.json", swaggerDocsSecurityHeaders, (_req, res) => {
+    res.json(openApiDocument);
+  });
+  app.use(
+    "/api-docs",
+    swaggerDocsSecurityHeaders,
+    swaggerUi.serve,
+    swaggerUi.setup(openApiDocument, swaggerUiOptions)
+  );
 
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true, ts: Date.now() });
