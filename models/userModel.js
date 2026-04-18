@@ -268,6 +268,19 @@ const userSchema = new mongoose.Schema(
       default: null,
       select: false,
     },
+    // Telegram integration fields
+    telegramId: {
+      type: String,
+      default: null,
+      unique: true,
+      sparse: true,
+      index: true,
+    },
+    tgLinkToken: { type: String, default: null, select: false },
+    tgLinkTokenExp: { type: Date, default: null, select: false },
+    // auth code used for Telegram OTP password reset
+    authCode: { type: String, default: null, select: false },
+    authCodeExp: { type: Date, default: null, select: false },
   },
   { timestamps: true }
 );
