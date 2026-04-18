@@ -20,6 +20,7 @@ import inventoryRoutes from "../routes/inventoryRoutes.js";
 import colorRoutes from "../routes/colorRoutes.js";
 import materialRoutes from "../routes/materialRoutes.js";
 import manufacturerRoutes from "../routes/manufacturerRoutes.js";
+import plannerTextureRoutes from "../routes/plannerTextureRoutes.js";
 import productAttributeRoutes from "../routes/productAttributeRoutes.js";
 import productQuestionRoutes from "../routes/productQuestionRoutes.js";
 
@@ -42,6 +43,7 @@ export const registerApiRoutes = (app) => {
   app.use("/api/colors", colorRoutes);
   app.use("/api/materials", materialRoutes);
   app.use("/api/manufacturers", manufacturerRoutes);
+  app.use("/api/planner-textures", plannerTextureRoutes);
   app.use("/api/product-attributes", productAttributeRoutes);
   app.use("/api/product-questions", productQuestionRoutes);
   app.use("/api/admin", adminRoutes);
