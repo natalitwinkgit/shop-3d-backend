@@ -25,6 +25,9 @@ export const env = {
   mongoUri: String(
     process.env.MONGO_URI || process.env.MONGO_URL || process.env.DATABASE_URL || ""
   ).trim(),
+  publicApiUrl: String(
+    process.env.PUBLIC_API_URL || process.env.RENDER_EXTERNAL_URL || ""
+  ).trim(),
   jwtSecret: String(process.env.JWT_SECRET || "").trim(),
   allowCookieAuth: toFlag(process.env.ALLOW_COOKIE_AUTH, false),
   redisUrl: String(process.env.REDIS_URL || "").trim(),
@@ -44,5 +47,14 @@ export const env = {
       String(process.env.SMTP_SECURE || "").trim() === ""
         ? undefined
         : toFlag(process.env.SMTP_SECURE, false),
+  },
+  // Telegram bot configuration
+  telegramBotToken: String(process.env.TELEGRAM_BOT_TOKEN || "").trim(),
+  telegramBotEnabled: toFlag(process.env.TELEGRAM_BOT_ENABLED ?? "false", false),
+  telegramBotUsername: String(process.env.TELEGRAM_BOT_USERNAME || "").trim(),
+  cloudinary: {
+    cloudName: String(process.env.CLOUDINARY_CLOUD_NAME || "").trim(),
+    apiKey: String(process.env.CLOUDINARY_API_KEY || "").trim(),
+    apiSecret: String(process.env.CLOUDINARY_API_SECRET || "").trim(),
   },
 };
