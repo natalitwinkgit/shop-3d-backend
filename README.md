@@ -1,114 +1,155 @@
-# shop-3d-backend
+# Shop 3D Backend
 
-## Environment
+Backend platform for a 3D furniture e-commerce product: catalog, admin panel API,
+inventory, orders, loyalty, customer chat, AI assistant, Telegram account flows,
+and operational tooling.
 
-Set a remote MongoDB connection string in `.env` using `MONGO_URI`.
+This repository is intended to be a production backend, not just a demo server.
+It contains API routes, service-layer business logic, MongoDB models, Socket.IO
+chat delivery, Telegram bot integration, Swagger documentation, and test coverage.
 
-Example:
+## Documentation
 
+Start here:
+
+- [Project Documentation](docs/PROJECT-DOCUMENTATION.md) - product scope, architecture, data flows, diagrams, and module map.
+- [Operations Guide](docs/OPERATIONS.md) - local setup, environment variables, deploy checklist, security, and maintenance scripts.
+- [Frontend API Reference](docs/frontend-api-reference.md) - frontend-facing endpoint notes.
+- [Telegram Frontend Checklist](docs/telegram-frontend-checklist.md) - Telegram account and bot integration notes.
+- [Product Questions](docs/product-questions.md) - public product question form and admin replies.
+- [Password Reset](docs/password-reset.md) - forgot-password implementation notes.
+
+## System Overview
+
+```mermaid
+flowchart LR
+  Customer[Customer Web App] --> API[Express API]
+  Admin[Admin Panel] --> API
+  API --> Mongo[(MongoDB)]
+  API --> Cloudinary[Cloudinary]
+  API --> SMTP[SMTP Email]
+  API --> Socket[Socket.IO Chat]
+  API --> TelegramSvc[Telegram Bot Service]
+  TelegramSvc --> Telegram[Telegram Bot API]
+  TelegramSvc --> Mongo
+  API --> AI[OpenAI / Gemini Providers]
 ```
+
+## Key Capabilities
+
+- Product catalog with categories, subcategories, attributes, colors, media, and 3D model metadata.
+- Admin APIs for catalog, inventory, orders, users, product questions, planner textures, and chat.
+- Inventory stock synchronization from warehouse rows to product availability fields.
+- Customer account flows: auth, profile, addresses, likes, cart, loyalty, password reset, Telegram login.
+- Real-time chat with delivery/read states, admin direct messages, and AI-assisted replies.
+- Telegram bot microservice with secure account binding, notifications, login confirmation, and styled bot messages.
+- Public form security with sanitization, safe raster upload checks, rate limits, and optional Cloudflare Turnstile.
+- Swagger/OpenAPI JSON and UI.
+
+## Quick Start
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Create `.env` from `.env.example` and set at minimum:
+
+```env
 MONGO_URI=mongodb+srv://<user>:<pass>@cluster0.example.mongodb.net/shop-3d-backend?retryWrites=true&w=majority
+JWT_SECRET=change-me
+CLIENT_URL=http://localhost:5173
 ```
 
-The app now requires a Mongo URI and will not fall back to a local `127.0.0.1` database.
+Run the backend:
 
-## Security toggles
-
-Recommended baseline in `.env`:
-
-```
-ALLOW_COOKIE_AUTH=false
-SESSION_BINDING_MODE=report
-CSP_ENABLED=true
+```bash
+npm run dev
 ```
 
-Rollout path for session binding:
+Run the Telegram bot service when Telegram features are enabled:
 
-1. Start with `SESSION_BINDING_MODE=report` and monitor logs.
-2. After frontend token refresh rollout, switch to `SESSION_BINDING_MODE=enforce`.
-
-Optional for multi-instance deployments:
-
-```
-REDIS_URL=redis://<host>:6379
+```bash
+npm run telegram:service
 ```
 
-## Swagger / OpenAPI
+Run tests:
 
-Swagger UI is available at:
+```bash
+npm test
+```
+
+## API Documentation
+
+Swagger UI:
 
 - `GET /api-docs`
 - `GET /api-docs.json`
 
-For local development, the documented server defaults to `http://localhost:5000`.
-For Render or another public deployment, set:
+For deployed environments, set:
 
+```env
+PUBLIC_API_URL=https://your-service.example.com
 ```
-PUBLIC_API_URL=https://your-service.onrender.com
-```
 
-If `PUBLIC_API_URL` is empty, the backend also falls back to `RENDER_EXTERNAL_URL`
-when Render provides it.
+## Important Environment Groups
 
-## Password Reset
+Core:
 
-Forgot-password flow:
-
-- `POST /api/auth/forgot-password` with `{ "email": "user@example.com" }`
-- backend generates a one-time reset token, stores only its SHA-256 hash, and emails a frontend reset link
-- `POST /api/auth/reset-password` with `{ "token": "...", "password": "...", "confirmPassword": "..." }`
-- token expires after 1 hour and is cleared after successful reset
-
-Configure the frontend reset page URL and SMTP:
-
-```
+```env
+NODE_ENV=development
+PORT=5000
+MONGO_URI=
+JWT_SECRET=
 CLIENT_URL=http://localhost:5173
+```
+
+Security:
+
+```env
+ALLOW_COOKIE_AUTH=false
+SESSION_BINDING_MODE=report
+CSP_ENABLED=true
+TURNSTILE_SITE_KEY=
+TURNSTILE_SECRET_KEY=
+TURNSTILE_MIN_SCORE=0
+REDIS_URL=
+```
+
+Email:
+
+```env
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASS=
+SMTP_FROM=
+SMTP_SECURE=false
 PASSWORD_RESET_URL=http://localhost:5173/reset-password
-SMTP_HOST=
-SMTP_PORT=587
-SMTP_USER=
-SMTP_PASS=
-SMTP_FROM=
-SMTP_SECURE=false
 ```
 
-## Product Questions
+Telegram:
 
-Public product questions are available at `POST /api/product-questions`.
-Admin management is available under `/api/admin/product-questions`.
-
-Reply emails use SMTP only when these variables are configured:
-
-```
-SMTP_HOST=
-SMTP_PORT=587
-SMTP_USER=
-SMTP_PASS=
-SMTP_FROM=
-SMTP_SECURE=false
+```env
+TELEGRAM_SERVICE_INTERNAL_URL=
+TELEGRAM_INTERNAL_API_KEY=
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_BOT_USERNAME=
+WEBSITE_BASE_URL=
 ```
 
-If SMTP is not configured or an email send fails, the admin reply is still saved and
-the response includes `email.sent: false`.
+See [Operations Guide](docs/OPERATIONS.md) for the full setup and deployment checklist.
 
-See `docs/product-questions.md` for payload examples.
+## Maintenance Scripts
 
-## Live Voice Chat (MVP backend)
+```bash
+npm run db:audit
+npm run inventory:sync-stock
+npm run seed:test
+npm run seed:test:clear
+```
 
-Added endpoint:
+## License
 
-- `POST /api/chat/live/turn` (auth required)
-  - multipart field: `audio` (optional if `transcript` provided)
-  - optional body: `text`, `transcript`, `language`, `mode`, `conversationId`
-  - `POST /api/chat/text/turn` is a typed-input alias that accepts the same turn payload without audio
-  - returns both persisted messages in the same conversation thread:
-    - recognized user message (`meta.type = "voice"` for audio turns or `meta.type = "text"` for typed turns, with matching `meta.mode`)
-    - assistant reply message (same conversation)
-    - when the reply matches catalog products, `products[]` and `assistantMessage.meta.productCards[]`
-    - for voice turns, `tts.text` and `assistantMessage.meta.speechText` are short speakable summaries; `assistantMessage.text` keeps the full display reply
-  - emits Socket.IO status event `chat:live:status` with states:
-    - `processing`
-    - `speaking`
-    - `idle`
-
-This does not create a separate chat history; it appends to existing `Message` history.
+This project is proprietary and all rights are reserved. See [LICENSE](LICENSE).
