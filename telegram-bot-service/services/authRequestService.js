@@ -25,6 +25,10 @@ const REQUEST_TTL_BY_KIND = {
   recovery: () => telegramEnv.recoveryTtlMinutes,
 };
 
+const BRAND_NAME = "MebliHub";
+
+const brandTitle = (emoji, title) => `<b>${emoji} ${BRAND_NAME} · ${title}</b>`;
+
 const isExpired = (request) => !request?.expiresAt || new Date(request.expiresAt).getTime() <= Date.now();
 
 const assertRequestToken = (request, requestToken) => {
@@ -340,8 +344,18 @@ const sendActionRequestToTelegram = async ({ request, binding, kind }) => {
       : "🔐 Підтвердити відновлення";
   const body =
     kind === "login"
-      ? "Хтось намагається увійти у ваш акаунт меблевого магазину через Telegram.\n\nЯкщо це ви, натисніть кнопку нижче."
-      : "Запит на відновлення доступу до акаунта меблевого магазину.\n\nЯкщо це ви, підтвердьте запит.";
+      ? [
+          brandTitle("🔑", "вхід у кабінет"),
+          "Хтось намагається увійти у ваш акаунт через Telegram.",
+          "",
+          "Якщо це ви, натисніть кнопку нижче. Якщо ні, просто ігноруйте це повідомлення.",
+        ].join("\n")
+      : [
+          brandTitle("🔐", "відновлення доступу"),
+          "Отримали запит на відновлення пароля для вашого акаунта.",
+          "",
+          "Якщо це ви, підтвердьте запит кнопкою нижче.",
+        ].join("\n");
 
   await safeSendTelegramMessage({
     chatId: binding.chatId,
