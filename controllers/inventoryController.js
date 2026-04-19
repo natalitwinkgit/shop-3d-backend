@@ -8,6 +8,7 @@ import {
   loadLocationTranslations,
   resolveLocationLang,
 } from "../services/locationPresentationService.js";
+import { syncProductInventoryStock } from "../services/productStockSyncService.js";
 
 const toNum = (x, def = 0) => {
   const n = Number(x);
@@ -489,6 +490,8 @@ export const upsertInventoryRow = async ({
     });
   }
 
+  await syncProductInventoryStock(productId);
+
   return { doc, payload, previous, changed };
 };
 
@@ -673,6 +676,8 @@ export async function remove(req, res) {
       reason: pickStr(req.body?.reason || req.query?.reason),
     });
 
+    await syncProductInventoryStock(existing.product?._id || existing.product);
+
     const translations = await loadInventoryTranslations(req);
     return res.json({
       ok: true,
@@ -766,6 +771,8 @@ export async function transfer(req, res) {
         toOnHand: clamp0(target.onHand),
       },
     });
+
+    await syncProductInventoryStock(productId);
 
     const [sourceRow, targetRow] = await Promise.all([
       Inventory.findById(source._id)

@@ -5,6 +5,12 @@ import path from "path";
 import fs from "fs";
 import Category from "../models/Category.js";
 import { protect, admin } from "../middleware/authMiddleware.js";
+import { safeRasterImageFileFilter } from "../services/uploadValidationService.js";
+import {
+  assertCategoryCanDelete,
+  assertCategoryKeyCanChange,
+  assertSubCategoryCanDelete,
+} from "../services/catalogIntegrityService.js";
 
 const router = express.Router();
 
@@ -27,7 +33,11 @@ const storage = multer.diskStorage({
     cb(null, uniqueSuffix + path.extname(file.originalname));
   },
 });
-const upload = multer({ storage });
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+  fileFilter: safeRasterImageFileFilter,
+});
 
 /** =========================
  *  GET ALL PARENTS
@@ -156,12 +166,16 @@ router.delete("/:category/children/:key", protect, admin, async (req, res) => {
     const doc = await Category.findOne({ category });
     if (!doc) return res.status(404).json({ message: "Категорію не знайдено" });
 
+    await assertSubCategoryCanDelete({ category, subCategory: key });
+
     doc.children = (doc.children || []).filter((c) => c.key !== key);
     await doc.save();
 
     res.json({ message: "Підкатегорію видалено" });
   } catch (e) {
-    res.status(500).json({ message: "Помилка при видаленні підкатегорії" });
+    res.status(e.statusCode || 500).json({
+      message: e.statusCode ? e.message : "Помилка при видаленні підкатегорії",
+    });
   }
 });
 
@@ -218,6 +232,12 @@ router.put("/:id", protect, admin, upload.single("image"), async (req, res) => {
 
     const updateData = {};
     if (category) updateData.category = category;
+    if (category) {
+      await assertCategoryKeyCanChange({
+        currentCategory: currentCategory.category,
+        nextCategory: category,
+      });
+    }
     if (name_ua && name_en) updateData.names = { ua: name_ua, en: name_en };
     if (typeof description_ua === "string" || typeof description_en === "string") {
       updateData.description = {
@@ -242,7 +262,9 @@ router.put("/:id", protect, admin, upload.single("image"), async (req, res) => {
 
     res.json(updated);
   } catch (e) {
-    res.status(500).json({ message: "Помилка при оновленні категорії" });
+    res.status(e.statusCode || 500).json({
+      message: e.statusCode ? e.message : "Помилка при оновленні категорії",
+    });
   }
 });
 
@@ -252,15 +274,20 @@ router.delete("/:id", protect, admin, async (req, res) => {
       return res.status(400).json({ message: "Invalid category id" });
     }
 
-    const deleted = await Category.findByIdAndDelete(req.params.id);
-    if (!deleted) return res.status(404).json({ message: "Категорію не знайдено" });
+    const category = await Category.findById(req.params.id);
+    if (!category) return res.status(404).json({ message: "Категорію не знайдено" });
 
-    const folderPath = path.join(baseUploadPath, deleted.category);
+    await assertCategoryCanDelete(category.category);
+    await category.deleteOne();
+
+    const folderPath = path.join(baseUploadPath, category.category);
     if (fs.existsSync(folderPath)) fs.rmSync(folderPath, { recursive: true, force: true });
 
     res.json({ message: "Категорію успішно видалено" });
   } catch (e) {
-    res.status(500).json({ message: "Помилка при видаленні категорії" });
+    res.status(e.statusCode || 500).json({
+      message: e.statusCode ? e.message : "Помилка при видаленні категорії",
+    });
   }
 });
 

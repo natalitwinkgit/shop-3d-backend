@@ -2,6 +2,10 @@ import { Router } from "express";
 
 import Category from "../../models/Category.js";
 import { adminUpload } from "../lib/adminShared.js";
+import {
+  assertCategoryCanDelete,
+  assertSubCategoryCanDelete,
+} from "../../services/catalogIntegrityService.js";
 
 const router = Router();
 
@@ -115,13 +119,17 @@ router.delete("/categories/:category/children/:key", async (req, res) => {
     const doc = await Category.findOne({ category });
     if (!doc) return res.status(404).json({ message: "Категорію не знайдено" });
 
+    await assertSubCategoryCanDelete({ category, subCategory: key });
+
     doc.children = (doc.children || []).filter((child) => child.key !== key);
     await doc.save();
 
     res.json({ message: "Підкатегорію видалено" });
   } catch (error) {
     console.error("[ADMIN categories children DELETE]", error);
-    res.status(500).json({ message: "Помилка при видаленні підкатегорії" });
+    res.status(error.statusCode || 500).json({
+      message: error.statusCode ? error.message : "Помилка при видаленні підкатегорії",
+    });
   }
 });
 
@@ -195,10 +203,13 @@ router.delete("/categories/:id", async (req, res) => {
     const category = await Category.findById(req.params.id);
     if (!category) return res.status(404).json({ message: "Category not found" });
 
+    await assertCategoryCanDelete(category.category);
     await category.deleteOne();
     res.json({ ok: true });
   } catch (error) {
-    res.status(500).json({ message: "Delete category failed" });
+    res.status(error.statusCode || 500).json({
+      message: error.statusCode ? error.message : "Delete category failed",
+    });
   }
 });
 
