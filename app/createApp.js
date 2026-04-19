@@ -30,6 +30,7 @@ export const createApp = () => {
     windowMs: 60 * 1000,
     max: 120,
     message: "Too many API requests. Please retry later.",
+    skip: (req) => req.originalUrl.startsWith("/api/i18n-missing"),
   });
 
   app.use(

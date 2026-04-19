@@ -52,6 +52,15 @@ export const env = {
   telegramBotToken: String(process.env.TELEGRAM_BOT_TOKEN || "").trim(),
   telegramBotEnabled: toFlag(process.env.TELEGRAM_BOT_ENABLED ?? "false", false),
   telegramBotUsername: String(process.env.TELEGRAM_BOT_USERNAME || "").trim(),
+  telegramServiceInternalUrl: String(
+    process.env.TELEGRAM_SERVICE_INTERNAL_URL ||
+      process.env.TELEGRAM_SERVICE_URL ||
+      `http://127.0.0.1:${process.env.TELEGRAM_SERVICE_PORT || 5055}/internal`
+  ).trim(),
+  telegramInternalApiKey: String(process.env.TELEGRAM_INTERNAL_API_KEY || "").trim(),
+  websiteInternalApiKey: String(
+    process.env.WEBSITE_INTERNAL_API_KEY || process.env.TELEGRAM_INTERNAL_API_KEY || ""
+  ).trim(),
   cloudinary: {
     cloudName: String(process.env.CLOUDINARY_CLOUD_NAME || "").trim(),
     apiKey: String(process.env.CLOUDINARY_API_KEY || "").trim(),

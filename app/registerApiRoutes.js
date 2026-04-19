@@ -23,9 +23,13 @@ import manufacturerRoutes from "../routes/manufacturerRoutes.js";
 import plannerTextureRoutes from "../routes/plannerTextureRoutes.js";
 import productAttributeRoutes from "../routes/productAttributeRoutes.js";
 import productQuestionRoutes from "../routes/productQuestionRoutes.js";
+import accountTelegramRoutes from "../routes/accountTelegramRoutes.js";
+import internalTelegramRoutes from "../routes/internalTelegramRoutes.js";
 
 export const registerApiRoutes = (app) => {
   app.use("/api/auth", authRoutes);
+  app.use("/api/account", accountTelegramRoutes);
+  app.use("/api/internal", internalTelegramRoutes);
   app.use("/api/likes", likeRoutes);
   app.use("/api/products", productRoutes);
   app.use("/api/categories", categoryRoutes);
