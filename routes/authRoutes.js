@@ -3,6 +3,9 @@ import { z } from "zod";
 import { 
   registerUser, 
   loginUser, 
+  createTelegramLoginRequest,
+  getTelegramLoginRequest,
+  redeemTelegramLoginRequest,
   getMe,
   updateMe,
   logoutUser,
@@ -52,6 +55,13 @@ const resetPasswordRateLimit = createRateLimit({
   message: "Too many password reset attempts. Please try again later.",
 });
 
+const telegramLoginPollRateLimit = createRateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 90,
+  message: "Too many Telegram login polling requests. Please try again later.",
+  keyGenerator: (req) => `${req.ip}:telegram-login:${req.params?.requestId || "unknown"}`,
+});
+
 const registerSchema = z.object({
   name: z.string().trim().min(2),
   email: z.string().trim().email(),
@@ -75,6 +85,10 @@ const resetPasswordSchema = z.object({
   confirmPassword: z.string().min(6),
 });
 
+const telegramLoginRequestSchema = z.object({
+  login: z.string().trim().min(3),
+});
+
 router.post(
   "/register",
   validateZodBody(registerSchema),
@@ -86,6 +100,22 @@ router.post(
   validateZodBody(loginSchema),
   loginRateLimit,
   loginUser
+);
+router.post(
+  "/telegram/login-request",
+  validateZodBody(telegramLoginRequestSchema),
+  loginRateLimit,
+  createTelegramLoginRequest
+);
+router.get(
+  "/telegram/login-request/:requestId",
+  telegramLoginPollRateLimit,
+  getTelegramLoginRequest
+);
+router.post(
+  "/telegram/login-request/:requestId/redeem",
+  loginRateLimit,
+  redeemTelegramLoginRequest
 );
 router.get("/me", protect, getMe);
 router.patch("/me", protect, updateMe);

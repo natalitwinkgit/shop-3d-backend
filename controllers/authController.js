@@ -22,6 +22,7 @@ import {
 } from "../services/passwordResetService.js";
 import { listUserLikes, toggleUserLike } from "../services/likeService.js";
 import { listUserAddresses } from "../services/accountProfileService.js";
+import { telegramServiceClient } from "../services/telegramServiceClient.js";
 
 const signToken = (userId, req = null) => {
   const payload = { id: userId };
@@ -36,6 +37,66 @@ const pickStr = (value) => String(value || "").trim();
 const normalizeEmail = (value) => pickStr(value).toLowerCase();
 const sendError = (res, statusCode, code, message) =>
   res.status(statusCode).json({ code, message });
+
+const requestTokenFromReq = (req) =>
+  pickStr(
+    req.headers["x-telegram-request-token"] ||
+      req.body?.requestToken ||
+      req.query?.requestToken ||
+      ""
+  );
+
+const addPhoneVariant = (variants, value) => {
+  const normalized = normalizePhone(value);
+  if (!normalized) return;
+
+  variants.add(normalized);
+  const digits = normalized.replace(/\D/g, "");
+  if (digits) {
+    variants.add(digits);
+    variants.add(`+${digits}`);
+  }
+};
+
+const phoneLookupVariants = (value) => {
+  const digits = normalizePhone(value).replace(/\D/g, "");
+  const variants = new Set();
+
+  addPhoneVariant(variants, value);
+  if (digits.length === 9) {
+    addPhoneVariant(variants, `0${digits}`);
+    addPhoneVariant(variants, `380${digits}`);
+  }
+  if (digits.length === 10 && digits.startsWith("0")) {
+    addPhoneVariant(variants, digits.slice(1));
+    addPhoneVariant(variants, `38${digits}`);
+  }
+  if (digits.length === 12 && digits.startsWith("380")) {
+    addPhoneVariant(variants, digits.slice(3));
+    addPhoneVariant(variants, `0${digits.slice(3)}`);
+  }
+
+  return [...variants].filter(Boolean);
+};
+
+const findUserByLogin = async (login) => {
+  const normalizedLogin = pickStr(login);
+  if (!normalizedLogin) return null;
+
+  if (normalizedLogin.includes("@")) {
+    return User.findOne({ email: normalizeEmail(normalizedLogin) }).select("-passwordHash -password");
+  }
+
+  const phoneVariants = phoneLookupVariants(normalizedLogin);
+  if (!phoneVariants.length) return null;
+
+  return User.findOne({
+    $or: [
+      { phoneNormalized: { $in: phoneVariants } },
+      { phone: { $in: phoneVariants } },
+    ],
+  }).select("-passwordHash -password");
+};
 
 const buildUserWithRelations = async (userDoc) => {
   const payload = buildPublicUserResponse(userDoc);
@@ -183,6 +244,107 @@ export const loginUser = async (req, res) => {
   } catch (error) {
     logger.error("AUTH login failed", {}, error);
     return sendError(res, 500, ERROR_CODES.SERVER_ERROR, "Server error");
+  }
+};
+
+export const createTelegramLoginRequest = async (req, res) => {
+  const login = pickStr(req.body?.login || req.body?.email || req.body?.phone);
+  if (!login) {
+    return sendError(res, 400, ERROR_CODES.BAD_REQUEST, "Email or phone is required");
+  }
+
+  try {
+    const user = await findUserByLogin(login);
+    if (!user) {
+      return sendError(res, 404, ERROR_CODES.NOT_FOUND, "User not found");
+    }
+    if (user.status === "banned") {
+      return sendError(res, 403, ERROR_CODES.FORBIDDEN, "Your account is banned");
+    }
+
+    const result = await telegramServiceClient.createLoginRequest({
+      websiteUserId: String(user._id),
+      metadata: {
+        source: "login_page",
+        userAgent: pickStr(req.headers["user-agent"]),
+        loginHint: login.includes("@") ? normalizeEmail(login) : normalizePhone(login),
+      },
+    });
+
+    return res.status(201).json(result);
+  } catch (error) {
+    logger.error("AUTH telegram login request failed", {}, error);
+    return sendError(
+      res,
+      error.statusCode || 500,
+      error.code || ERROR_CODES.SERVER_ERROR,
+      error.message || "Telegram login request failed"
+    );
+  }
+};
+
+export const getTelegramLoginRequest = async (req, res) => {
+  try {
+    const result = await telegramServiceClient.getLoginRequest({
+      requestId: req.params.requestId,
+      requestToken: requestTokenFromReq(req),
+    });
+    return res.json(result);
+  } catch (error) {
+    return sendError(
+      res,
+      error.statusCode || 500,
+      error.code || ERROR_CODES.SERVER_ERROR,
+      error.message || "Telegram login request failed"
+    );
+  }
+};
+
+export const redeemTelegramLoginRequest = async (req, res) => {
+  try {
+    const result = await telegramServiceClient.redeemLoginRequest({
+      requestId: req.params.requestId,
+      requestToken: requestTokenFromReq(req),
+    });
+
+    const user = await User.findById(result.websiteUserId).select("-passwordHash -password");
+    if (!user) {
+      return sendError(res, 404, ERROR_CODES.NOT_FOUND, "User not found");
+    }
+    if (user.status === "banned") {
+      return sendError(res, 403, ERROR_CODES.FORBIDDEN, "Your account is banned");
+    }
+
+    const now = new Date();
+    await User.updateOne(
+      { _id: user._id },
+      {
+        $set: {
+          isOnline: true,
+          presence: "online",
+          lastSeen: now,
+          lastActivityAt: now,
+          lastLoginAt: now,
+          ...(user.phone ? { phoneNormalized: normalizePhone(user.phone) } : {}),
+        },
+      }
+    );
+
+    await ensureLoyaltyCard(user._id);
+    const freshUser = await User.findById(user._id).select("-passwordHash -password");
+
+    return res.status(200).json({
+      token: signToken(user._id, req),
+      user: await buildUserWithRelations(freshUser || user),
+    });
+  } catch (error) {
+    logger.error("AUTH telegram login redeem failed", {}, error);
+    return sendError(
+      res,
+      error.statusCode || 500,
+      error.code || ERROR_CODES.SERVER_ERROR,
+      error.message || "Telegram login failed"
+    );
   }
 };
 

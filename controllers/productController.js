@@ -24,6 +24,7 @@ import {
   buildProductMutationPayload,
   createHttpError,
 } from "../services/productPayloadService.js";
+import { assertProductCategoryReferences } from "../services/catalogIntegrityService.js";
 import { ensureProductColorKeys } from "../services/productColorAssignmentService.js";
 
 const ensureObjectId = (value, fieldName = "Product id") => {
@@ -349,16 +350,35 @@ export const getProductsStats = async (_req, res, next) => {
     const total = await Product.countDocuments();
     const hasDiscount = await Product.countDocuments({ discount: { $gt: 0 } });
 
-    // ✅ FIX: group by product (бо в схемі Inventory поле "product")
     const inStockAgg = await Inventory.aggregate([
+      {
+        $lookup: {
+          from: "locations",
+          localField: "location",
+          foreignField: "_id",
+          as: "locationDoc",
+        },
+      },
+      { $unwind: "$locationDoc" },
+      { $match: { "locationDoc.isActive": { $ne: false } } },
       {
         $group: {
           _id: "$product",
-          onHandTotal: { $sum: "$onHand" },
-          reservedTotal: { $sum: "$reserved" },
+          availableTotal: {
+            $sum: {
+              $max: [
+                0,
+                {
+                  $subtract: [
+                    { $max: [0, { $ifNull: ["$onHand", 0] }] },
+                    { $max: [0, { $ifNull: ["$reserved", 0] }] },
+                  ],
+                },
+              ],
+            },
+          },
         },
       },
-      { $addFields: { availableTotal: { $subtract: ["$onHandTotal", "$reservedTotal"] } } },
       { $match: { availableTotal: { $gt: 0 } } },
       { $count: "count" },
     ]);
@@ -440,6 +460,10 @@ export const createProduct = async (req, res, next) => {
         )
       )
     );
+    await assertProductCategoryReferences({
+      category: payload.category,
+      subCategory: payload.subCategory,
+    });
 
     const product = await Product.create(payload);
     const hydrated = await attachProductAttributeReferencesToProducts(
@@ -475,6 +499,11 @@ export const updateProduct = async (req, res, next) => {
         { sourceBody: req.body }
       )
     );
+    await assertProductCategoryReferences({
+      category: updateData.category ?? product.category,
+      subCategory:
+        updateData.subCategory !== undefined ? updateData.subCategory : product.subCategory,
+    });
 
     const updated = await Product.findByIdAndUpdate(
       req.params.id,
@@ -501,9 +530,11 @@ export const deleteProduct = async (req, res, next) => {
   try {
     ensureObjectId(req.params.id);
 
-    const deleted = await Product.findByIdAndDelete(req.params.id);
-    if (!deleted) throw createHttpError(404, "Не знайдено");
+    const product = await Product.findById(req.params.id);
+    if (!product) throw createHttpError(404, "Не знайдено");
 
+    await Inventory.deleteMany({ product: product._id });
+    await product.deleteOne();
     res.json({ message: "Видалено" });
   } catch (err) {
     forwardControllerError(err, next, "deleteProduct", "Помилка видалення");

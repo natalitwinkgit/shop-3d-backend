@@ -6,7 +6,9 @@ import request from "supertest";
 
 import Product from "../models/Product.js";
 import ProductQuestion from "../models/ProductQuestion.js";
+import SpecTemplate from "../models/SpecTemplate.js";
 import User from "../models/userModel.js";
+import { env } from "../config/env.js";
 
 let app;
 
@@ -93,7 +95,10 @@ test("product question route accepts current frontend payload shape", async () =
   const productId = new mongoose.Types.ObjectId();
   const originalFindById = Product.findById;
   const originalCreate = ProductQuestion.create;
+  const originalSecretKey = env.turnstile.secretKey;
   const createdDocs = [];
+
+  env.turnstile.secretKey = "";
 
   Product.findById = (id) => ({
     select() {
@@ -134,8 +139,70 @@ test("product question route accepts current frontend payload shape", async () =
     assert.equal(createdDocs[0].customer.email, "ai-support@shop3d.local");
     assert.equal(createdDocs[0].source, "product_page");
   } finally {
+    env.turnstile.secretKey = originalSecretKey;
     Product.findById = originalFindById;
     ProductQuestion.create = originalCreate;
+  }
+});
+
+test("product question route requires captcha token when turnstile is enabled", async () => {
+  const productId = new mongoose.Types.ObjectId();
+  const originalSecretKey = env.turnstile.secretKey;
+  const originalSiteKey = env.turnstile.siteKey;
+
+  env.turnstile.secretKey = "turnstile-secret";
+  env.turnstile.siteKey = "turnstile-site-key";
+
+  try {
+    const response = await request(app).post("/api/product-questions").send({
+      productId: String(productId),
+      name: "AI Support",
+      email: "ai-support@shop3d.local",
+      message: "Чи є в наявності?",
+      source: "product-page",
+    });
+
+    assert.equal(response.status, 400);
+    assert.equal(response.body.code, "VALIDATION_ERROR");
+    assert.equal(response.body.message, "captchaToken is required");
+  } finally {
+    env.turnstile.secretKey = originalSecretKey;
+    env.turnstile.siteKey = originalSiteKey;
+  }
+});
+
+test("spec template route falls back to default template instead of returning 404", async () => {
+  const originalFindOne = SpecTemplate.findOne;
+  const calls = [];
+
+  SpecTemplate.findOne = (filter) => ({
+    lean() {
+      calls.push(filter);
+      if (filter.typeKey === "default") {
+        return Promise.resolve({
+          typeKey: "default",
+          title: { ua: "За замовчуванням", en: "Default" },
+          sections: [{ id: "main", title: { ua: "Характеристики", en: "Specifications" } }],
+          isActive: true,
+        });
+      }
+      return Promise.resolve(null);
+    },
+  });
+
+  try {
+    const response = await request(app).get("/api/spec-templates/unknown-chair");
+
+    assert.equal(response.status, 200);
+    assert.equal(response.body.typeKey, "default");
+    assert.equal(response.body.requestedTypeKey, "unknown-chair");
+    assert.equal(response.body.resolvedTypeKey, "default");
+    assert.equal(response.body.isFallback, true);
+    assert.equal(calls.length, 2);
+    assert.deepEqual(calls[0], { typeKey: "unknown-chair", isActive: true });
+    assert.deepEqual(calls[1], { typeKey: "default", isActive: true });
+  } finally {
+    SpecTemplate.findOne = originalFindOne;
   }
 });
 

@@ -15,6 +15,17 @@ const TYPE_LABELS = {
   service: "Сервісне повідомлення",
 };
 
+const TYPE_EMOJIS = {
+  orderStatus: "📦",
+  promotions: "🔥",
+  personalDiscounts: "💎",
+  abandonedCart: "🛒",
+  backInStock: "✅",
+  priceDrop: "💸",
+  unfinishedOrder: "🧾",
+  service: "🛋️",
+};
+
 const SUPPORTED_TYPES = new Set(Object.keys(TYPE_LABELS));
 
 const statusLabels = {
@@ -42,26 +53,31 @@ const normalizeNotificationType = (type) => {
 const websiteButton = (url) =>
   url
     ? {
-        inline_keyboard: [[{ text: "Відкрити сайт", url }]],
+        inline_keyboard: [[{ text: "🌐 Відкрити сайт", url }]],
       }
     : undefined;
+
+const brandTitle = (emoji, title) => `<b>${emoji} MebliHub · ${html(title)}</b>`;
 
 const buildNotificationText = ({ type, title, message, payload = {} }) => {
   if (type === "orderStatus") {
     const orderNumber = payload.orderNumber || payload.orderId || "";
     const status = statusLabels[payload.status] || payload.status || "";
     return [
-      "<b>Оновлення замовлення</b>",
-      hasValue(orderNumber) ? `Замовлення: ${html(orderNumber)}` : "",
-      hasValue(status) ? `Статус: ${html(status)}` : "",
-      hasValue(payload.total) ? `Сума: ${html(payload.total)}` : "",
+      brandTitle("📦", "оновлення замовлення"),
+      hasValue(orderNumber) ? `🧾 Замовлення: ${html(orderNumber)}` : "",
+      hasValue(status) ? `🧭 Статус: ${html(status)}` : "",
+      hasValue(payload.total) ? `💰 Сума: ${html(payload.total)}` : "",
       message ? html(message) : "",
     ]
       .filter(Boolean)
       .join("\n");
   }
 
-  return [`<b>${html(title || TYPE_LABELS[type] || "Повідомлення")}</b>`, message ? html(message) : ""]
+  return [
+    brandTitle(TYPE_EMOJIS[type] || "🛋️", title || TYPE_LABELS[type] || "Повідомлення"),
+    message ? html(message) : "",
+  ]
     .filter(Boolean)
     .join("\n");
 };

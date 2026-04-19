@@ -8,6 +8,8 @@ const messageSchema = new mongoose.Schema(
     isGuest: { type: Boolean, default: false },
     guestName: { type: String, default: "" }, // ✅ тільки для гостей (опційно)
     isRead: { type: Boolean, default: false },
+    deliveredAt: { type: Date, default: null },
+    readAt: { type: Date, default: null },
     source: {
       type: String,
       enum: ["human", "ai_admin"],
@@ -20,5 +22,6 @@ const messageSchema = new mongoose.Schema(
 );
 
 messageSchema.index({ sender: 1, receiver: 1, createdAt: 1 });
+messageSchema.index({ receiver: 1, isRead: 1, deliveredAt: 1, createdAt: -1 });
 
 export default mongoose.models.Message || mongoose.model("Message", messageSchema);

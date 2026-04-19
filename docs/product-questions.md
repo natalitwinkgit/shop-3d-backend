@@ -15,6 +15,17 @@ SMTP_SECURE=false
 
 `SMTP_FROM` is optional and falls back to `SMTP_USER`. Keep secrets in `.env`, not in source.
 
+Public form anti-bot protection can be enabled with Cloudflare Turnstile:
+
+```env
+TURNSTILE_SITE_KEY=
+TURNSTILE_SECRET_KEY=
+TURNSTILE_MIN_SCORE=0
+```
+
+When `TURNSTILE_SECRET_KEY` is set, `POST /api/product-questions` requires a valid
+`captchaToken`. If the secret is empty, Turnstile verification is skipped.
+
 ## Public API
 
 `POST /api/product-questions`
@@ -28,7 +39,8 @@ SMTP_SECURE=false
     "phone": "+380501112233"
   },
   "message": "Чи доступний цей товар у сірому кольорі?",
-  "source": "product_page"
+  "source": "product_page",
+  "captchaToken": "<turnstile-token>"
 }
 ```
 

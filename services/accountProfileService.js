@@ -3,6 +3,7 @@ import multer from "multer";
 import path from "path";
 import mongoose from "mongoose";
 import UserAddress from "../models/UserAddress.js";
+import { safeRasterImageFileFilter } from "./uploadValidationService.js";
 
 const avatarUploadDir = path.join(process.cwd(), "uploads", "avatars");
 
@@ -38,14 +39,7 @@ const avatarStorage = multer.diskStorage({
 export const avatarUpload = multer({
   storage: avatarStorage,
   limits: { fileSize: 10 * 1024 * 1024 },
-  fileFilter: (_req, file, callback) => {
-    if (!String(file.mimetype || "").startsWith("image/")) {
-      const error = new Error("Only image uploads are allowed");
-      error.statusCode = 400;
-      return callback(error);
-    }
-    return callback(null, true);
-  },
+  fileFilter: safeRasterImageFileFilter,
 });
 
 export const avatarUploadFields = avatarUpload.fields([

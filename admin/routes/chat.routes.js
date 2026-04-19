@@ -1,16 +1,29 @@
 import { Router } from "express";
+import { z } from "zod";
 
-import Message from "../../models/Message.js";
+import { validateZodBody } from "../../app/middleware/validateZod.js";
 import User, { ADMIN_ROLES } from "../../models/userModel.js";
 import {
   buildAdminConversationSummaries,
-  getParticipantName,
-  loadAdminIndex,
-  loadUserNameMap,
-} from "../lib/adminShared.js";
+  getConversationHistoryPayload,
+  getConversationPeerForViewer,
+  markConversationDelivered,
+  markConversationRead,
+  processDirectChatMessage,
+} from "../../services/adminChatService.js";
 import { getPresenceStatus } from "../../services/userProfileService.js";
 
 const router = Router();
+const DIRECT_MESSAGE_MAX_LENGTH = 3000;
+
+const directMessageSchema = z.object({
+  senderId: z.string().trim().min(1, "senderId is required"),
+  receiverId: z.string().trim().min(1, "receiverId is required"),
+  conversationId: z.string().trim().optional(),
+  text: z.string().trim().min(1, "text is required").max(DIRECT_MESSAGE_MAX_LENGTH),
+  language: z.string().trim().optional(),
+  mode: z.enum(["live", "text"]).optional(),
+});
 
 const getChatConversations = async (_req, res) => {
   try {
@@ -60,30 +73,23 @@ router.get("/chat-conversations", getChatConversations);
 router.get("/chat/conversations", getChatConversations);
 router.get("/chat/support-admin", getSupportAdmin);
 router.get("/chat/admin-id", getSupportAdmin);
+router.post("/chat/direct-message", validateZodBody(directMessageSchema), async (req, res) => {
+  try {
+    const result = await processDirectChatMessage(req.body || {});
+    res.status(201).json(result);
+  } catch (error) {
+    res.status(error?.statusCode || 500).json({
+      message: error?.message || "Failed to send direct message",
+    });
+  }
+});
 
 router.patch("/chat/read/:senderId/:receiverId", async (req, res) => {
   try {
-    const { adminIds, adminSet } = await loadAdminIndex();
-    const senderId = String(req.params.senderId || "");
-    const receiverId = String(req.params.receiverId || "");
-
-    const senderIsAdmin = adminSet.has(senderId);
-    const receiverIsAdmin = adminSet.has(receiverId);
-
-    const filter =
-      senderIsAdmin !== receiverIsAdmin
-        ? {
-            sender: senderIsAdmin ? receiverId : senderId,
-            receiver: { $in: adminIds },
-            isRead: false,
-          }
-        : {
-            sender: senderId,
-            receiver: receiverId,
-            isRead: false,
-          };
-
-    await Message.updateMany(filter, { $set: { isRead: true } });
+    await markConversationRead({
+      senderId: req.params.senderId,
+      receiverId: req.params.receiverId,
+    });
 
     res.status(204).end();
   } catch (error) {
@@ -93,74 +99,15 @@ router.patch("/chat/read/:senderId/:receiverId", async (req, res) => {
 
 router.get("/chat/:userId1/:userId2", async (req, res) => {
   try {
-    const { adminIds, adminSet, adminMap } = await loadAdminIndex();
     const userId1 = String(req.params.userId1 || "");
     const userId2 = String(req.params.userId2 || "");
-
-    const id1IsAdmin = adminSet.has(userId1);
-    const id2IsAdmin = adminSet.has(userId2);
-
-    const externalId =
-      id1IsAdmin && !id2IsAdmin
-        ? userId2
-        : !id1IsAdmin && id2IsAdmin
-          ? userId1
-          : null;
-
-    const historyFilter = externalId
-      ? {
-          $or: [
-            { sender: externalId, receiver: { $in: adminIds } },
-            { receiver: externalId, sender: { $in: adminIds } },
-          ],
-        }
-      : {
-          $or: [
-            { sender: userId1, receiver: userId2 },
-            { sender: userId2, receiver: userId1 },
-          ],
-        };
-
-    const history = await Message.find(historyFilter).sort({ createdAt: 1 }).lean();
-
-    const participantIds = new Set();
-    for (const messageDoc of history) {
-      participantIds.add(String(messageDoc.sender || ""));
-      participantIds.add(String(messageDoc.receiver || ""));
+    const viewerId = String(req.user?._id || req.user?.id || "").trim();
+    const peerId = await getConversationPeerForViewer({ userId1, userId2, viewerId });
+    if (viewerId && peerId) {
+      await markConversationDelivered({ senderId: peerId, receiverId: viewerId });
     }
 
-    const userMap = await loadUserNameMap(Array.from(participantIds));
-
-    const payload = history.map((messageDoc) => {
-      const senderId = String(messageDoc.sender || "");
-      const receiverId = String(messageDoc.receiver || "");
-      const senderIsAdmin = adminSet.has(senderId);
-      const receiverIsAdmin = adminSet.has(receiverId);
-
-      return {
-        ...messageDoc,
-        sender: senderId,
-        receiver: receiverId,
-        senderIsAdmin,
-        receiverIsAdmin,
-        senderName: getParticipantName({
-          participantId: senderId,
-          messageDoc,
-          userMap,
-          adminMap,
-        }),
-        receiverName: getParticipantName({
-          participantId: receiverId,
-          messageDoc,
-          userMap,
-          adminMap,
-        }),
-        repliedByAdminId: senderIsAdmin ? senderId : null,
-        repliedByAdminName: senderIsAdmin ? adminMap.get(senderId)?.name || "Admin" : null,
-      };
-    });
-
-    res.json(payload);
+    res.json(await getConversationHistoryPayload({ userId1, userId2 }));
   } catch (error) {
     res.status(500).json({ message: "Server error" });
   }

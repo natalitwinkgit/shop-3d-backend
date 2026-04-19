@@ -1,4 +1,5 @@
 import { env } from "../config/env.js";
+import crypto from "crypto";
 
 const readInternalToken = (req) => {
   const headerToken = String(req.headers["x-internal-api-key"] || "").trim();
@@ -19,7 +20,11 @@ export const requireInternalAuth = (req, res, next) => {
   }
 
   const token = readInternalToken(req);
-  if (!token || token !== env.websiteInternalApiKey) {
+  const tokenHash = crypto.createHash("sha256").update(token).digest();
+  const expectedHash = crypto.createHash("sha256").update(env.websiteInternalApiKey).digest();
+  const validToken = Boolean(token) && crypto.timingSafeEqual(tokenHash, expectedHash);
+
+  if (!validToken) {
     return res.status(401).json({ code: "UNAUTHORIZED", message: "Unauthorized" });
   }
 

@@ -1,14 +1,41 @@
 import { Server } from "socket.io";
 
 import { socketCorsOptions } from "../config/cors.js";
-import { loadAdminIndex } from "../services/adminChatService.js";
-import { createChatMessage, registerChatEmitter } from "../services/chatMessageService.js";
+import {
+  loadAdminIndex,
+  markMessagesDeliveredForReceiver,
+} from "../services/adminChatService.js";
+import {
+  createChatMessage,
+  markChatParticipantConnected,
+  markChatParticipantDisconnected,
+  registerChatEmitter,
+} from "../services/chatMessageService.js";
 import {
   extractSocketAccessToken,
   resolveChatSessionFromToken,
 } from "../services/chatSessionService.js";
 
 const pickStr = (value) => String(value || "").trim();
+const SOCKET_MESSAGE_WINDOW_MS = 60 * 1000;
+const SOCKET_MESSAGE_LIMIT = 30;
+
+const consumeSocketMessageQuota = (socket) => {
+  const now = Date.now();
+  const state = socket.data.messageRateLimit || {
+    windowStart: now,
+    count: 0,
+  };
+
+  if (now - state.windowStart > SOCKET_MESSAGE_WINDOW_MS) {
+    state.windowStart = now;
+    state.count = 0;
+  }
+
+  state.count += 1;
+  socket.data.messageRateLimit = state;
+  return state.count <= SOCKET_MESSAGE_LIMIT;
+};
 
 export const createSocketServer = (server) => {
   const io = new Server(server, {
@@ -39,9 +66,20 @@ export const createSocketServer = (server) => {
     };
 
     joinOwnRoom();
+    if (sessionId) {
+      markChatParticipantConnected(sessionId);
+      markMessagesDeliveredForReceiver({ receiverId: sessionId }).catch((error) => {
+        console.error("[socket delivery sync] error:", error);
+      });
+    }
 
     const handleSendMessage = async (payload) => {
       try {
+        if (!consumeSocketMessageQuota(socket)) {
+          socket.emit("message:error", { code: "TOO_MANY_REQUESTS" });
+          return;
+        }
+
         const sender = pickStr(
           payload?.sender ??
             payload?.from ??
@@ -116,7 +154,11 @@ export const createSocketServer = (server) => {
     socket.on("send_message", async (payload) => {
       await handleSendMessage(payload);
     });
-    socket.on("disconnect", () => {});
+    socket.on("disconnect", () => {
+      if (sessionId) {
+        markChatParticipantDisconnected(sessionId);
+      }
+    });
   });
 
   return io;

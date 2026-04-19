@@ -67,7 +67,18 @@ export const createApp = () => {
     app.use(requestLogger);
   }
 
-  app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+  app.use(
+    "/uploads",
+    express.static(path.join(process.cwd(), "uploads"), {
+      setHeaders: (res, filePath) => {
+        res.setHeader("X-Content-Type-Options", "nosniff");
+        const ext = path.extname(String(filePath || "")).toLowerCase();
+        if ([".html", ".htm", ".svg", ".js", ".mjs", ".css"].includes(ext)) {
+          res.setHeader("Content-Disposition", "attachment");
+        }
+      },
+    })
+  );
   app.get("/api-docs.json", swaggerDocsSecurityHeaders, (_req, res) => {
     res.json(openApiDocument);
   });

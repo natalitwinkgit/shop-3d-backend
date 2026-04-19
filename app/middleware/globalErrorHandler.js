@@ -14,12 +14,17 @@ export const globalErrorHandler = (err, req, res, _next) => {
     { requestId, path: req.originalUrl, statusCode: status },
     err
   );
+  const publicMessage =
+    status >= 500 && process.env.NODE_ENV === "production"
+      ? "Server error"
+      : err?.message || "Server error";
+
   res.status(status).json({
     code:
       err?.code ||
       (status >= 500 ? ERROR_CODES.INTERNAL_ERROR : ERROR_CODES.REQUEST_ERROR),
-    message: err?.message || "Server error",
-    details: err?.details || null,
+    message: publicMessage,
+    details: status >= 500 && process.env.NODE_ENV === "production" ? null : err?.details || null,
     path: req.originalUrl,
     requestId,
     ...(process.env.NODE_ENV === "production" ? {} : { stack: err?.stack }),

@@ -3,15 +3,13 @@ import multer from "multer";
 import { cloudinary, isCloudinaryConfigured } from "../config/cloudinary.js";
 import { createHttpError } from "./productPayloadService.js";
 import { parsePlannerTextureSurfaceType } from "./plannerTextureService.js";
-
-const IMAGE_MIME_PREFIX = "image/";
+import { createImageUploadError, isSafeRasterImageUpload } from "./uploadValidationService.js";
 
 const plannerTextureUpload = multer({
   storage: multer.memoryStorage(),
   fileFilter: (_req, file, callback) => {
-    const mimeType = String(file?.mimetype || "").toLowerCase();
-    if (mimeType.startsWith(IMAGE_MIME_PREFIX)) return callback(null, true);
-    return callback(new Error("Only image files are allowed for planner textures"));
+    if (isSafeRasterImageUpload(file)) return callback(null, true);
+    return callback(createImageUploadError("Only safe raster image files are allowed for planner textures"));
   },
   limits: {
     fileSize: 20 * 1024 * 1024,

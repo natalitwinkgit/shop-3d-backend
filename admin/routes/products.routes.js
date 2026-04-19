@@ -6,6 +6,7 @@ import {
   upsertInventoryRow,
 } from "../../controllers/inventoryController.js";
 import { getProductsStats } from "../../controllers/productController.js";
+import Inventory from "../../models/Inventory.js";
 import Product from "../../models/Product.js";
 import { normalizeProductCatalogPayload } from "../../services/catalogNormalizationService.js";
 import { attachColorReferencesToProducts } from "../../services/productColorReferenceService.js";
@@ -14,10 +15,12 @@ import {
   resolveProductAttributeKeys,
 } from "../../services/productAttributeReferenceService.js";
 import { attachProductInventoryAvailability } from "../../services/productInventoryAvailabilityService.js";
+import { syncProductInventoryStock } from "../../services/productStockSyncService.js";
 import {
   attachReferenceDictionariesToProducts,
   resolveProductSpecificationReferences,
 } from "../../services/productReferenceService.js";
+import { assertProductCategoryReferences } from "../../services/catalogIntegrityService.js";
 import {
   MAX_PRODUCT_IMAGE_COUNT,
   buildProductMutationPayload,
@@ -490,9 +493,13 @@ const syncInventoryRowsForProduct = async ({ productId, body, req }) => {
 
 const mergeInventoryIntoProductPayload = (productPayload, inventoryView) => {
   if (!inventoryView) return productPayload;
+  const stockQty = Number(inventoryView?.summary?.available || 0);
 
   return {
     ...productPayload,
+    stockQty,
+    inStock: stockQty > 0,
+    hasStock: stockQty > 0,
     inventoryRows: inventoryView.items,
     inventorySummary: inventoryView.summary,
   };
@@ -559,6 +566,10 @@ router.post("/products", productMediaUploadFields, async (req, res, next) => {
       )
     );
     payload = await resolveUniqueProductIdentity({ payload });
+    await assertProductCategoryReferences({
+      category: payload.category,
+      subCategory: payload.subCategory,
+    });
 
     try {
       doc = await Product.create(payload);
@@ -622,6 +633,13 @@ const updateAdminProduct = async (req, res, next) => {
             excludeId: String(product._id),
           })
         : payload;
+    await assertProductCategoryReferences({
+      category: payloadWithUniqueIdentity.category ?? product.category,
+      subCategory:
+        payloadWithUniqueIdentity.subCategory !== undefined
+          ? payloadWithUniqueIdentity.subCategory
+          : product.subCategory,
+    });
 
     let saved = null;
     try {
@@ -649,6 +667,12 @@ const updateAdminProduct = async (req, res, next) => {
       body: req.body,
       req,
     });
+    const stockSync = inventoryView
+      ? null
+      : await syncProductInventoryStock(String(saved._id), { requireInventoryRows: true });
+    if (stockSync?.matched && !stockSync.skipped) {
+      saved = await Product.findById(saved._id);
+    }
 
     const hydrated = await attachProductAttributeReferencesToProducts(
       await attachReferenceDictionariesToProducts(
@@ -981,6 +1005,7 @@ router.delete("/products/:id", async (req, res, next) => {
     const product = await Product.findById(req.params.id);
     if (!product) throw createHttpError(404, "Product not found");
 
+    await Inventory.deleteMany({ product: product._id });
     await product.deleteOne();
     res.json({ ok: true });
   } catch (error) {

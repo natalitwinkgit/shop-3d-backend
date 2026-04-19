@@ -1,6 +1,7 @@
 import fs from "fs";
 import multer from "multer";
 import path from "path";
+import { createImageUploadError, isSafeRasterImageUpload } from "./uploadValidationService.js";
 
 const ensureDir = (dirPath) => {
   if (!fs.existsSync(dirPath)) {
@@ -20,7 +21,6 @@ const rootUploadsDir = path.join(process.cwd(), "uploads");
 const productUploadsDir = path.join(rootUploadsDir, "products");
 ensureDir(productUploadsDir);
 
-const IMAGE_MIME_PREFIX = "image/";
 const MODEL_MIME_ALLOWED = new Set(["model/gltf-binary", "model/gltf+json"]);
 const MODEL_EXT_ALLOWED = new Set([".glb", ".gltf", ".usdz", ".obj", ".fbx"]);
 
@@ -47,8 +47,8 @@ const productMediaFileFilter = (_req, file, callback) => {
   const originalName = String(file?.originalname || "");
 
   if (isImageField(fieldName)) {
-    if (mimeType.startsWith(IMAGE_MIME_PREFIX)) return callback(null, true);
-    return callback(new Error("Only image files are allowed for image upload fields"));
+    if (isSafeRasterImageUpload(file)) return callback(null, true);
+    return callback(createImageUploadError("Only safe raster image files are allowed for image upload fields"));
   }
 
   if (isModelField(fieldName)) {
