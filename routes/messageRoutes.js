@@ -1,7 +1,12 @@
 import express from "express";
 import { protect } from "../middleware/authMiddleware.js";
 import { canAccessSupportConversation } from "../services/chatAccessService.js";
-import { getConversationHistory, markConversationRead } from "../services/adminChatService.js";
+import {
+  getConversationHistoryPayload,
+  getConversationPeerForViewer,
+  markConversationDelivered,
+  markConversationRead,
+} from "../services/adminChatService.js";
 
 const router = express.Router();
 
@@ -19,7 +24,13 @@ router.get("/:userId1/:userId2", protect, async (req, res) => {
       return res.status(403).json({ message: "Forbidden" });
     }
 
-    const history = await getConversationHistory({ userId1, userId2 });
+    const viewerId = String(req.user?._id || req.user?.id || "").trim();
+    const peerId = await getConversationPeerForViewer({ userId1, userId2, viewerId });
+    if (viewerId && peerId) {
+      await markConversationDelivered({ senderId: peerId, receiverId: viewerId });
+    }
+
+    const history = await getConversationHistoryPayload({ userId1, userId2 });
     
     res.json(history);
   } catch (err) {

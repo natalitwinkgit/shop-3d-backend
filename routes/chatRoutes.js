@@ -7,8 +7,10 @@ import { validateZodBody } from "../app/middleware/validateZod.js";
 import { z } from "zod";
 import { canAccessSupportConversation } from "../services/chatAccessService.js";
 import {
-  getConversationHistory,
+  getConversationHistoryPayload,
+  getConversationPeerForViewer,
   getSupportAdminProfile,
+  markConversationDelivered,
   markConversationRead,
 } from "../services/adminChatService.js";
 import { createGuestChatSession } from "../services/chatSessionService.js";
@@ -192,7 +194,13 @@ router.get("/:userId1/:userId2", protect, async (req, res) => {
       return res.status(403).json({ message: "Forbidden" });
     }
 
-    const history = await getConversationHistory({ userId1, userId2 });
+    const viewerId = pickStr(req.user?._id || req.user?.id);
+    const peerId = await getConversationPeerForViewer({ userId1, userId2, viewerId });
+    if (viewerId && peerId) {
+      await markConversationDelivered({ senderId: peerId, receiverId: viewerId });
+    }
+
+    const history = await getConversationHistoryPayload({ userId1, userId2 });
 
     res.json(history);
   } catch (e) {

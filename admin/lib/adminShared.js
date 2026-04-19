@@ -4,12 +4,17 @@ import multer from "multer";
 import path from "path";
 
 import Category from "../../models/Category.js";
+import { safeRasterImageFileFilter } from "../../services/uploadValidationService.js";
 import Message from "../../models/Message.js";
 import User, {
   ADMIN_ROLES,
   isAdminRole,
   normalizePhone,
 } from "../../models/userModel.js";
+import {
+  buildAdminConversationSummaries as buildAdminConversationSummariesFromService,
+  countChatConversations as countChatConversationsFromService,
+} from "../../services/adminChatService.js";
 
 const ensureDir = (dir) => {
   if (!fs.existsSync(dir)) {
@@ -49,6 +54,7 @@ const storage = multer.diskStorage({
 export const adminUpload = multer({
   storage,
   limits: { fileSize: 30 * 1024 * 1024 },
+  fileFilter: safeRasterImageFileFilter,
 });
 
 const isObjectIdLike = (value) => /^[a-f0-9]{24}$/i.test(String(value || ""));
@@ -173,99 +179,11 @@ export const getParticipantName = ({ participantId, messageDoc, userMap, adminMa
 };
 
 export const buildAdminConversationSummaries = async () => {
-  const { adminIds, adminSet, adminMap } = await loadAdminIndex();
-  if (!adminIds.length) return [];
-
-  const messages = await Message.find({
-    $or: [{ sender: { $in: adminIds } }, { receiver: { $in: adminIds } }],
-  })
-    .sort({ createdAt: -1 })
-    .lean();
-
-  const externalIds = new Set();
-  const conversationMap = new Map();
-
-  for (const messageDoc of messages) {
-    const senderId = String(messageDoc.sender || "");
-    const receiverId = String(messageDoc.receiver || "");
-    const senderIsAdmin = adminSet.has(senderId);
-    const receiverIsAdmin = adminSet.has(receiverId);
-
-    if (senderIsAdmin && receiverIsAdmin) continue;
-    if (!senderIsAdmin && !receiverIsAdmin) continue;
-
-    const externalId = senderIsAdmin ? receiverId : senderId;
-    externalIds.add(externalId);
-
-    if (!conversationMap.has(externalId)) {
-      conversationMap.set(externalId, {
-        userId: externalId,
-        userName: "",
-        name: "",
-        lastMessage: String(messageDoc.text || ""),
-        lastDate: messageDoc.createdAt,
-        unreadCount: 0,
-        isGuest: externalId.startsWith("guest_") || !!messageDoc.isGuest,
-        answeredByAdminId: null,
-        answeredByAdminName: null,
-        adminIds: new Set(),
-        adminNames: new Set(),
-      });
-    }
-
-    const conversation = conversationMap.get(externalId);
-
-    if (!senderIsAdmin && !messageDoc.isRead) {
-      conversation.unreadCount += 1;
-    }
-
-    if (senderIsAdmin) {
-      conversation.adminIds.add(senderId);
-      const adminName = adminMap.get(senderId)?.name;
-      if (adminName) conversation.adminNames.add(adminName);
-
-      if (!conversation.answeredByAdminId) {
-        conversation.answeredByAdminId = senderId;
-        conversation.answeredByAdminName = adminName || "Admin";
-      }
-    }
-
-    if (conversation.isGuest && !conversation.userName) {
-      conversation.userName = String(messageDoc.guestName || "").trim();
-      conversation.name = conversation.userName;
-    }
-  }
-
-  const userMap = await loadUserNameMap(Array.from(externalIds));
-
-  return Array.from(conversationMap.values())
-    .map((conversation) => {
-      const fallbackName = conversation.isGuest
-        ? conversation.userName || "Guest"
-        : userMap.get(conversation.userId)?.name ||
-          userMap.get(conversation.userId)?.email ||
-          "User";
-
-      return {
-        userId: conversation.userId,
-        userName: fallbackName,
-        name: fallbackName,
-        lastMessage: conversation.lastMessage,
-        lastDate: conversation.lastDate,
-        unreadCount: conversation.unreadCount,
-        isGuest: conversation.isGuest,
-        answeredByAdminId: conversation.answeredByAdminId,
-        answeredByAdminName: conversation.answeredByAdminName,
-        adminIds: Array.from(conversation.adminIds),
-        adminNames: Array.from(conversation.adminNames),
-      };
-    })
-    .sort((left, right) => new Date(right.lastDate).getTime() - new Date(left.lastDate).getTime());
+  return buildAdminConversationSummariesFromService();
 };
 
 export const countChatConversations = async () => {
-  const conversations = await buildAdminConversationSummaries();
-  return conversations.length;
+  return countChatConversationsFromService();
 };
 
 export const listFlatSubcategories = async (category) => {
