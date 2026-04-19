@@ -16,7 +16,11 @@ export const vercelPreviewRegex =
   /^https:\/\/shop-3d-frontend-1222-[a-z0-9-]+-nataliasumska95-1299s-projects\.vercel\.app$/i;
 
 export const allowedOrigins = Array.from(
-  new Set([...envAllowedOrigins, ...devAllowedOrigins, vercelProdOrigin])
+  new Set([
+    ...envAllowedOrigins,
+    ...(process.env.NODE_ENV === "production" ? [] : devAllowedOrigins),
+    vercelProdOrigin,
+  ])
 );
 
 export const isAllowedOrigin = (origin) => {

@@ -53,7 +53,13 @@ export const requestPasswordReset = async (
   user.resetPasswordTokenHash = tokenHash;
   user.resetPasswordExpiresAt = expiresAt;
   user.resetPasswordRequestedAt = requestedAt;
-  await user.save();
+  await user.updateOne({
+    $set: {
+      resetPasswordTokenHash: tokenHash,
+      resetPasswordExpiresAt: expiresAt,
+      resetPasswordRequestedAt: requestedAt,
+    },
+  });
 
   const emailResult = await sendResetEmail({ user, token, expiresAt });
   if (!emailResult?.sent) {
@@ -114,6 +120,20 @@ export const resetPasswordWithToken = async (
   user.lastSeen = currentTime;
   user.lastActivityAt = currentTime;
 
-  await user.save();
+  await user.updateOne({
+    $set: {
+      passwordHash: user.passwordHash,
+      resetPasswordTokenHash: "",
+      resetPasswordExpiresAt: null,
+      resetPasswordRequestedAt: null,
+      lastLogoutAt: currentTime,
+      lastSeen: currentTime,
+      lastActivityAt: currentTime,
+    },
+    $unset: {
+      password: "",
+      resetCode: "",
+    },
+  });
   return { ok: true };
 };

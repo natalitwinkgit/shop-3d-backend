@@ -19,6 +19,11 @@ const toOptionalPort = (value) => {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
 };
 
+const toOptionalNumber = (value, fallback = 0) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
 export const env = {
   nodeEnv: String(process.env.NODE_ENV || "development"),
   port: Number(process.env.PORT || 5000),
@@ -37,6 +42,11 @@ export const env = {
   sessionBindingMode: normalizeSessionBindingMode(process.env.SESSION_BINDING_MODE),
   sessionBindingEnabled: toFlag(process.env.SESSION_BINDING_ENABLED, false),
   cspEnabled: toFlag(process.env.CSP_ENABLED ?? "true", true),
+  turnstile: {
+    siteKey: String(process.env.TURNSTILE_SITE_KEY || "").trim(),
+    secretKey: String(process.env.TURNSTILE_SECRET_KEY || "").trim(),
+    minScore: toOptionalNumber(process.env.TURNSTILE_MIN_SCORE, 0),
+  },
   smtp: {
     host: String(process.env.SMTP_HOST || "").trim(),
     port: toOptionalPort(process.env.SMTP_PORT),

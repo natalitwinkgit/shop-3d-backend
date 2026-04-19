@@ -7,6 +7,7 @@ import {
   updateProductQuestionReadState,
   updateProductQuestionStatus,
 } from "../services/productQuestionService.js";
+import { verifyTurnstileToken } from "../services/turnstileService.js";
 
 const hasHoneypotSignal = (body = {}) =>
   ["website", "company", "honeypot"].some((field) => String(body?.[field] || "").trim());
@@ -16,6 +17,8 @@ export const createProductQuestionHandler = async (req, res, next) => {
     if (hasHoneypotSignal(req.body)) {
       return res.status(202).json({ ok: true });
     }
+
+    await verifyTurnstileToken(req.body?.captchaToken, { remoteIp: req.ip });
 
     const question = await createProductQuestion(req.body, { currentUser: req.user || null });
     return res.status(201).json({ ok: true, question });

@@ -1,3 +1,5 @@
+import crypto from "crypto";
+
 import { telegramEnv } from "../config/env.js";
 
 const readInternalToken = (req) => {
@@ -19,7 +21,11 @@ export const requireInternalAuth = (req, res, next) => {
   }
 
   const token = readInternalToken(req);
-  if (!token || token !== telegramEnv.internalApiKey) {
+  const tokenHash = crypto.createHash("sha256").update(token).digest();
+  const expectedHash = crypto.createHash("sha256").update(telegramEnv.internalApiKey).digest();
+  const validToken = Boolean(token) && crypto.timingSafeEqual(tokenHash, expectedHash);
+
+  if (!validToken) {
     return res.status(401).json({ code: "UNAUTHORIZED", message: "Unauthorized" });
   }
 

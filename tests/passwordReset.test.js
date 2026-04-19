@@ -31,9 +31,9 @@ const makeUserDoc = (overrides = {}) => ({
   lastLogoutAt: null,
   lastSeen: null,
   lastActivityAt: null,
-  saveCalls: 0,
-  async save() {
-    this.saveCalls += 1;
+  updateOneCalls: [],
+  async updateOne(update) {
+    this.updateOneCalls.push(update);
     return this;
   },
   ...overrides,
@@ -69,7 +69,8 @@ test("requestPasswordReset stores token hash and sends reset email", async () =>
   assert.equal(user.resetPasswordTokenHash, hashPasswordResetToken(token));
   assert.equal(user.resetPasswordRequestedAt.toISOString(), now.toISOString());
   assert.equal(user.resetPasswordExpiresAt.getTime(), now.getTime() + 60 * 60 * 1000);
-  assert.equal(user.saveCalls, 1);
+  assert.equal(user.updateOneCalls.length, 1);
+  assert.equal(user.updateOneCalls[0].$set.resetPasswordTokenHash, hashPasswordResetToken(token));
   assert.equal(sent.length, 1);
   assert.equal(sent[0].token, token);
 });
@@ -132,7 +133,9 @@ test("resetPasswordWithToken updates password and clears reset token", async () 
   assert.equal(user.resetPasswordExpiresAt, null);
   assert.equal(user.resetPasswordRequestedAt, null);
   assert.equal(user.lastLogoutAt, now);
-  assert.equal(user.saveCalls, 1);
+  assert.equal(user.updateOneCalls.length, 1);
+  assert.equal(user.updateOneCalls[0].$set.lastLogoutAt, now);
+  assert.deepEqual(user.updateOneCalls[0].$unset, { password: "", resetCode: "" });
 });
 
 test("resetPasswordWithToken rejects mismatched passwords", async () => {
