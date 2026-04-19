@@ -33,6 +33,23 @@ Optional for multi-instance deployments:
 REDIS_URL=redis://<host>:6379
 ```
 
+## Swagger / OpenAPI
+
+Swagger UI is available at:
+
+- `GET /api-docs`
+- `GET /api-docs.json`
+
+For local development, the documented server defaults to `http://localhost:5000`.
+For Render or another public deployment, set:
+
+```
+PUBLIC_API_URL=https://your-service.onrender.com
+```
+
+If `PUBLIC_API_URL` is empty, the backend also falls back to `RENDER_EXTERNAL_URL`
+when Render provides it.
+
 ## Password Reset
 
 Forgot-password flow:

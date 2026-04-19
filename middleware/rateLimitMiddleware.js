@@ -27,8 +27,13 @@ export const createRateLimit = ({
   max = 10,
   message = "Too many requests",
   keyGenerator = null,
+  skip = null,
 } = {}) => {
   return async (req, res, next) => {
+    if (typeof skip === "function" && skip(req)) {
+      return next();
+    }
+
     const now = Date.now();
     const customKey =
       typeof keyGenerator === "function" ? keyGenerator(req) : "";

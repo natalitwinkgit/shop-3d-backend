@@ -47,6 +47,22 @@ test("unknown API route returns unified 404 contract", async () => {
   assert.equal(typeof response.body.requestId, "string");
 });
 
+test("swagger json is exposed", async () => {
+  const response = await request(app).get("/api-docs.json");
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.openapi, "3.0.3");
+  assert.equal(response.body.info.title, "shop-3d-backend API");
+  assert.equal(response.body.paths["/api/health"].get.summary, "Check process health");
+});
+
+test("swagger ui is exposed", async () => {
+  const response = await request(app).get("/api-docs");
+
+  assert.equal(response.status, 301);
+  assert.match(String(response.headers.location || ""), /\/api-docs\/$/);
+});
+
 test("chat text turn route is registered", async () => {
   const response = await request(app).post("/api/chat/text/turn").send({
     text: "столи зелені",
