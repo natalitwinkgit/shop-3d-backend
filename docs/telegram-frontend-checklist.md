@@ -1,72 +1,104 @@
-# Frontend Checklist: Telegram bot integration
+# Frontend Checklist: Telegram у профілі користувача
 
-Цей чекліст для фронта сайту меблевого магазину. Backend Telegram microservice живе окремо, а frontend має працювати тільки через основний backend сайту. Не викликати `telegram-bot-service` напряму з браузера, бо там internal API key.
+Цей чекліст для frontend частини профілю користувача MebliHub. Frontend працює тільки з основним backend сайту. Не викликати `telegram-bot-service` напряму з браузера.
 
-## Що додати в профіль користувача
+## Ціль
 
-1. Додати блок `Telegram` у налаштування профілю.
-2. Показувати статус:
-   - `Telegram не підключено`
-   - `Telegram підключено`
-   - `Telegram заблокований або недоступний`, якщо backend поверне такий статус
-3. Додати кнопку `Підключити Telegram`.
-4. Після кліку викликати backend endpoint сайту для створення bind request.
-5. Показати користувачу:
-   - одноразовий код привʼязки
-   - TTL коду
-   - кнопку `Відкрити Telegram`
-   - fallback-інструкцію: “Відкрийте @mebli_hub_service_bot і введіть код”
-6. Запустити polling статусу bind request кожні 2-3 секунди.
-7. Якщо статус `confirmed`, оновити UI на `Telegram підключено`.
-8. Якщо статус `expired`, показати кнопку `Створити новий код`.
-9. Якщо статус `cancelled` або помилка, показати зрозуміле повідомлення.
-10. Додати кнопку `Відвʼязати Telegram`.
-11. Після відвʼязки очистити локальний стан і показати `Telegram не підключено`.
+Користувач у профілі сайту бачить блок `Telegram`, може відкрити бота, натиснути `/start`, поділитися своїм номером телефону, і бот привʼязує цей Telegram до акаунта сайту з таким самим номером.
 
-## UI для привʼязки Telegram
+Основний сценарій:
 
-Потрібні стани:
+1. Користувач залогінений на сайті.
+2. Відкриває `Профіль` або `Налаштування акаунта`.
+3. Бачить блок `Telegram`.
+4. Натискає `Відкрити Telegram-бота`.
+5. У Telegram натискає `/start`.
+6. Бот просить натиснути `Поділитися номером`.
+7. Telegram відправляє contact з телефоном.
+8. Backend знаходить акаунт сайту за цим телефоном.
+9. Telegram привʼязується до акаунта.
+10. Frontend оновлює статус на `Telegram підключено`.
 
-- `idle` - статус ще не завантажено
-- `not_linked` - Telegram не підключено
-- `creating` - створюється код
-- `pending` - код створено, чекаємо підтвердження в боті
-- `confirmed` - Telegram підключено
-- `expired` - код прострочено
-- `error` - помилка
+## Що додати в профіль
 
-Приклад UI copy:
+Додати окремий блок `Telegram` у налаштування акаунта.
+
+Показувати стани:
+
+- `loading` - статус завантажується.
+- `not_linked` - Telegram не підключено.
+- `linked` - Telegram підключено.
+- `blocked` - бот заблокований або недоступний.
+- `error` - не вдалося отримати статус.
+
+Для `not_linked` показати:
 
 ```text
-Підключіть Telegram, щоб отримувати статуси замовлень, акції та швидко входити на сайт.
+Telegram не підключено
+Підключіть Telegram, щоб отримувати статуси замовлень, акції та швидко відкривати дані акаунта в боті.
 ```
+
+Кнопки:
+
+- `Відкрити Telegram-бота`
+- `Я вже поділився номером`
+
+Для `linked` показати:
 
 ```text
-Ваш код: 482913
-Він дійсний 10 хвилин.
-Відкрийте @mebli_hub_service_bot і підтвердьте привʼязку.
+Telegram підключено
 ```
 
-## Frontend endpoints через основний backend
+Якщо backend повертає дані Telegram-профілю, показати:
 
-Фронт має працювати з такими endpoint-ами основного backend. Якщо їх ще немає, додати на backend як proxy до Telegram microservice.
+- username
+- firstName
+- linkedAt
+- стан сповіщень
+
+Кнопки:
+
+- `Відкрити Telegram-бота`
+- `Відвʼязати Telegram`
+
+## URL бота
+
+Кнопка `Відкрити Telegram-бота` відкриває:
+
+```text
+https://t.me/mebli_hub_service_bot
+```
+
+Не потрібно відкривати сайт із бота для привʼязки. Новий fallback-flow працює через `/start` і кнопку `Поділитися номером` у самому Telegram.
+
+## API для статусу
+
+При відкритті профілю frontend викликає:
 
 ```http
 GET /api/account/telegram
-POST /api/account/telegram/bind-request
-GET /api/account/telegram/bind-request/:requestId
-DELETE /api/account/telegram
-PATCH /api/account/telegram/notifications
 ```
 
-Очікуваний response для статусу:
+Очікуваний response, якщо Telegram не підключено:
+
+```json
+{
+  "linked": false,
+  "binding": null
+}
+```
+
+Очікуваний response, якщо Telegram підключено:
 
 ```json
 {
   "linked": true,
   "binding": {
+    "websiteUserId": "681111111111111111111111",
+    "telegramUserId": "123456789",
     "username": "mebli_user",
     "firstName": "Ivan",
+    "lastName": "Petrenko",
     "linkedAt": "2026-04-18T18:08:10.000Z",
     "notificationPreferences": {
       "orderStatus": true,
@@ -82,121 +114,75 @@ PATCH /api/account/telegram/notifications
 }
 ```
 
-Очікуваний response для створення коду:
+## Polling після відкриття бота
 
-```json
-{
-  "id": "681111111111111111111111",
-  "status": "pending",
-  "code": "482913",
-  "deepLink": "https://t.me/mebli_hub_service_bot?start=482913",
-  "expiresAt": "2026-04-18T18:15:00.000Z",
-  "ttlSeconds": 600
-}
-```
-
-## Що додати на сторінку логіну
-
-1. Додати кнопку `Увійти через Telegram`.
-2. Перед login request користувач має ввести email або телефон, щоб backend знайшов акаунт.
-3. Після кліку викликати backend endpoint сайту:
+Після кліку `Відкрити Telegram-бота` frontend має запустити короткий polling статусу:
 
 ```http
-POST /api/auth/telegram/login-request
+GET /api/account/telegram
 ```
 
-Request:
+Рекомендовано:
 
-```json
-{
-  "login": "ivan@example.com"
-}
-```
+- polling кожні 2-3 секунди;
+- тривалість 2 хвилини;
+- зупинити polling, якщо `linked: true`;
+- зупинити polling, якщо користувач закрив блок або перейшов зі сторінки;
+- при поверненні на вкладку перечитати статус один раз.
 
-4. Якщо Telegram не привʼязаний, показати:
+Поки polling активний, показати текст:
 
 ```text
-Telegram ще не підключено до цього акаунта. Увійдіть звичайним способом і підключіть Telegram у профілі.
+Відкрийте бота, натисніть /start і поділіться номером телефону. Після підтвердження статус оновиться автоматично.
 ```
 
-5. Якщо request створено, показати екран очікування:
+Кнопка:
 
 ```text
-Ми надіслали запит у Telegram. Натисніть “Підтвердити вхід” у боті.
+Перевірити статус
 ```
 
-6. Polling кожні 2-3 секунди:
+Вона вручну викликає `GET /api/account/telegram`.
 
-```http
-GET /api/auth/telegram/login-request/:requestId
-```
+## Відвʼязати Telegram
 
-7. Якщо статус `confirmed`, викликати redeem endpoint:
-
-```http
-POST /api/auth/telegram/login-request/:requestId/redeem
-```
-
-8. Після успішного redeem зберегти auth token/session так само, як після звичайного login.
-9. Якщо статус `expired`, показати кнопку `Надіслати ще раз`.
-10. Якщо request уже `redeemed`, не повторювати авторизацію.
-
-## Що додати на сторінку “Забули пароль”
-
-1. У flow відновлення пароля додати вибір способу:
-   - Email
-   - Telegram
-2. Telegram-спосіб доступний тільки якщо акаунт має привʼязаний Telegram.
-3. Користувач вводить email або телефон.
-4. Frontend викликає:
-
-```http
-POST /api/auth/telegram/recovery-request
-```
-
-Request:
-
-```json
-{
-  "login": "ivan@example.com"
-}
-```
-
-5. Показати екран очікування:
+Для `linked` стану додати кнопку:
 
 ```text
-Ми надіслали запит на відновлення доступу в Telegram.
-Підтвердьте його в @mebli_hub_service_bot.
+Відвʼязати Telegram
 ```
 
-6. Polling:
+При кліку показати confirm:
+
+```text
+Відвʼязати Telegram від акаунта?
+Ви більше не отримуватимете сповіщення в боті.
+```
+
+Після підтвердження викликати:
 
 ```http
-GET /api/auth/telegram/recovery-request/:requestId
+DELETE /api/account/telegram
 ```
 
-7. Якщо статус `confirmed`, викликати:
+Після успіху:
 
-```http
-POST /api/auth/telegram/recovery-request/:requestId/redeem
-```
+- очистити локальний Telegram state;
+- показати `Telegram не підключено`;
+- зупинити всі polling timers.
 
-8. Backend має повернути password reset token або redirect URL для форми нового пароля.
-9. Відкрити форму нового пароля.
-10. Якщо Telegram не привʼязаний, показати email recovery як fallback.
+## Налаштування сповіщень
 
-## Налаштування сповіщень у профілі
+Якщо Telegram підключено, показати switches:
 
-Додати чекбокси або switches:
-
-- Статуси замовлень
-- Акції
-- Персональні знижки
-- Покинуті кошики
-- Надходження товару в наявність
-- Зміна ціни на вибраний товар
-- Нагадування про незавершене замовлення
-- Сервісні повідомлення
+- `Статуси замовлень`
+- `Акції`
+- `Персональні знижки`
+- `Покинуті кошики`
+- `Наявність товару`
+- `Зміна ціни`
+- `Незавершене замовлення`
+- `Сервісні повідомлення`
 
 Зберігати через:
 
@@ -221,97 +207,116 @@ Request:
 }
 ```
 
-## Кабінет у Telegram web/profile UI
+Після успіху оновити локальний state з response.
 
-У профілі сайту можна додати короткий preview, що доступно в боті:
+## UI copy
 
-- Дисконтна картка
-- Останні замовлення
-- Обране
-- Сповіщення
-- Вхід через Telegram
-- Відновлення доступу через Telegram
-
-Кнопка:
+Для непривʼязаного акаунта:
 
 ```text
-Відкрити Telegram-бота
+Підключіть Telegram
+Отримуйте статуси замовлень, акції та швидкий доступ до акаунта в боті.
 ```
 
-URL:
+Інструкція:
 
 ```text
-https://t.me/mebli_hub_service_bot
+1. Натисніть “Відкрити Telegram-бота”.
+2. У боті натисніть /start.
+3. Натисніть “Поділитися номером”.
+4. Поверніться сюди, статус оновиться автоматично.
 ```
 
-## Edge cases для фронта
-
-- Код прострочено: показати `Створити новий код`.
-- Код уже використано: оновити статус привʼязки.
-- Telegram не привʼязаний при login/recovery: показати fallback email/password.
-- Користувач заблокував бота: показати “Відкрийте Telegram і розблокуйте бота”.
-- Користувач натиснув login через Telegram кілька разів: скасувати старий polling і відстежувати останній request.
-- Вкладка закрита під час pending: при поверненні перечитати статус.
-- Немає `deepLink`: показати ручну інструкцію з кодом.
-- 429/rate limit: показати таймер і не спамити повторними запитами.
-- 401 на frontend proxy: перелогінити користувача або показати auth error.
-
-## Frontend prompt
+Якщо номер у Telegram не збігається з номером акаунта:
 
 ```text
-Потрібно інтегрувати Telegram bot flow для MebliHub frontend.
+Не вдалося привʼязати Telegram. Перевірте, що номер телефону в акаунті збігається з номером Telegram.
+```
 
-Бот: @mebli_hub_service_bot
+Якщо backend недоступний:
 
-Зроби зміни:
+```text
+Не вдалося перевірити Telegram. Спробуйте ще раз.
+```
 
-1. У профілі користувача додай блок Telegram:
-   - статус підключення;
-   - кнопка “Підключити Telegram”;
-   - показ одноразового коду;
-   - кнопка deep link “Відкрити Telegram”;
-   - polling статусу привʼязки;
-   - кнопка “Відвʼязати Telegram”;
-   - налаштування типів сповіщень.
+Якщо Telegram вже підключено:
 
-2. На сторінці логіну додай “Увійти через Telegram”:
-   - користувач вводить email/phone;
-   - створюється login request;
-   - показується екран очікування підтвердження в Telegram;
-   - після confirmed робиться redeem і користувач авторизується.
+```text
+Telegram підключено
+```
 
-3. На сторінці “Забули пароль” додай спосіб “Telegram”:
-   - користувач вводить email/phone;
-   - створюється recovery request;
-   - користувач підтверджує запит у боті;
-   - після redeem відкривається форма нового пароля.
+## Важливі правила для frontend
 
-4. Додай frontend API layer для:
-   - GET /api/account/telegram
-   - POST /api/account/telegram/bind-request
-   - GET /api/account/telegram/bind-request/:requestId
-   - DELETE /api/account/telegram
-   - PATCH /api/account/telegram/notifications
-   - POST /api/auth/telegram/login-request
-   - GET /api/auth/telegram/login-request/:requestId
-   - POST /api/auth/telegram/login-request/:requestId/redeem
-   - POST /api/auth/telegram/recovery-request
-   - GET /api/auth/telegram/recovery-request/:requestId
-   - POST /api/auth/telegram/recovery-request/:requestId/redeem
+- Не викликати `telegram-bot-service` напряму.
+- Не передавати `TELEGRAM_INTERNAL_API_KEY` або `WEBSITE_INTERNAL_API_KEY` у frontend.
+- Не зберігати Telegram `telegramUserId` у localStorage як джерело істини.
+- Джерело істини для статусу тільки `GET /api/account/telegram`.
+- Не вважати клік `Відкрити Telegram-бота` успішною привʼязкою.
+- Не показувати `Telegram підключено`, поки backend не повернув `linked: true`.
+- Якщо користувач змінив номер телефону в профілі, перечитати Telegram status.
+- Якщо користувач натискає кнопку багато разів, не запускати кілька polling intervals одночасно.
 
-5. Оброби edge cases:
-   - expired request;
-   - Telegram не привʼязаний;
-   - rate limit;
-   - повторний клік;
-   - користувач заблокував бота;
-   - backend недоступний.
+## Edge cases
 
-6. UI copy українською.
+- Користувач відкрив бота, але не натиснув `/start`: лишити `not_linked`, показати інструкцію.
+- Користувач натиснув `/start`, але не поділився номером: лишити `not_linked`.
+- Користувач поділився чужим контактом: бот відхилить, frontend просто продовжує polling.
+- Номер Telegram не знайдено серед акаунтів сайту: показати інструкцію перевірити телефон у профілі.
+- Акаунт уже має інший Telegram: показати помилку після ручної перевірки статусу.
+- Telegram уже привʼязаний до іншого акаунта: показати помилку після ручної перевірки статусу.
+- Backend повернув 401: перелогінити користувача або показати auth error.
+- Backend повернув 429: зупинити частий polling і показати `Спробуйте за хвилину`.
+- Користувач закрив вкладку під час привʼязки: при наступному відкритті профілю знову викликати `GET /api/account/telegram`.
 
-7. Після реалізації:
-   - запусти lint/build/test, які є в frontend repo;
-   - зроби окремі коміти по логічних частинах;
-   - запуш зміни в окрему гілку;
-   - в фінальному повідомленні напиши branch, commits і перевірки.
+## Acceptance checklist
+
+- У профілі є блок `Telegram`.
+- При завантаженні профілю викликається `GET /api/account/telegram`.
+- Для `not_linked` є кнопка `Відкрити Telegram-бота`.
+- Кнопка відкриває `https://t.me/mebli_hub_service_bot`.
+- Після відкриття бота запускається polling `GET /api/account/telegram`.
+- Коли користувач у боті натискає `/start` і `Поділитися номером`, frontend сам оновлює статус на `Telegram підключено`.
+- Для `linked` є кнопка `Відвʼязати Telegram`.
+- `DELETE /api/account/telegram` оновлює UI без reload.
+- Налаштування сповіщень зберігаються через `PATCH /api/account/telegram/notifications`.
+- Немає прямих запитів з браузера до `telegram-bot-service`.
+- Немає internal API keys у frontend bundle.
+- Polling не дублюється при повторних кліках.
+- Помилки 401, 429, 5xx мають зрозумілий текст.
+
+## Prompt для frontend розробника
+
+```text
+Потрібно додати Telegram-привʼязку в профіль користувача MebliHub.
+
+Flow:
+1. Користувач залогінений на сайті.
+2. У профілі бачить блок Telegram.
+3. Натискає “Відкрити Telegram-бота”.
+4. У боті натискає /start.
+5. Бот просить “Поділитися номером”.
+6. Користувач ділиться номером.
+7. Backend привʼязує Telegram до акаунта з таким самим телефоном.
+8. Frontend polling-ом бачить linked: true і показує “Telegram підключено”.
+
+Frontend має використовувати тільки основний backend:
+- GET /api/account/telegram
+- DELETE /api/account/telegram
+- PATCH /api/account/telegram/notifications
+
+Не викликати telegram-bot-service напряму.
+Не додавати internal API keys у frontend.
+
+Зробити:
+- Telegram block у профілі.
+- Стани loading / not_linked / linked / blocked / error.
+- Кнопку “Відкрити Telegram-бота”.
+- Polling статусу після відкриття бота.
+- Кнопку “Перевірити статус”.
+- Кнопку “Відвʼязати Telegram”.
+- Switches для налаштувань сповіщень.
+- Український UI copy.
+- Обробку 401, 429, 5xx.
+
+Після реалізації запустити frontend lint/build/test, які є в repo.
 ```
