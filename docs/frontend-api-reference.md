@@ -234,6 +234,9 @@ Hydrated product response example:
   - active public locations only
 
 - `GET /api/spec-templates/:typeKey`
+  - returns the active template for `:typeKey`
+  - if no active template exists for that `typeKey`, backend falls back to active `default`
+  - if neither exists, backend returns a generated empty template with `200` and `isFallback: true`
 - `GET /api/inventory/product/:productId`
 - `GET /api/inventory/product/:productId?view=full`
 - `GET /api/heartbeat`

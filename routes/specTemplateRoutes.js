@@ -5,6 +5,22 @@ import { protect, admin } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
+const buildDefaultSections = () => [
+  {
+    id: "main",
+    title: { ua: "Характеристики", en: "Specifications" },
+    fieldKeys: [],
+  },
+];
+
+const buildFallbackTemplate = (typeKey) => ({
+  typeKey,
+  title: { ua: typeKey, en: typeKey },
+  sections: buildDefaultSections(),
+  isActive: true,
+  isFallback: true,
+});
+
 /**
  * ✅ GET /api/spec-templates/:typeKey
  * Повертає темплейт специфікацій для конкретного typeKey
@@ -15,11 +31,22 @@ router.get("/:typeKey", async (req, res) => {
     const typeKey = String(req.params.typeKey || "default");
 
     const tpl = await SpecTemplate.findOne({ typeKey, isActive: true }).lean();
+    if (tpl) return res.json(tpl);
 
-    // Якщо нема — повертаємо 404, щоб фронт міг зробити fallback
-    if (!tpl) return res.status(404).json({ message: "Spec template not found" });
+    const defaultTpl =
+      typeKey === "default"
+        ? null
+        : await SpecTemplate.findOne({ typeKey: "default", isActive: true }).lean();
+    if (defaultTpl) {
+      return res.json({
+        ...defaultTpl,
+        requestedTypeKey: typeKey,
+        resolvedTypeKey: "default",
+        isFallback: true,
+      });
+    }
 
-    res.json(tpl);
+    return res.json(buildFallbackTemplate(typeKey));
   } catch (e) {
     console.error("GET /api/spec-templates/:typeKey error:", e);
     res.status(500).json({ message: "Server error" });

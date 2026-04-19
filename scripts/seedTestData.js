@@ -8,6 +8,8 @@ import Inventory from "../models/Inventory.js";
 import InventoryMovement from "../models/InventoryMovement.js";
 import Like from "../models/Like.js";
 import Location from "../models/Location.js";
+import LoyaltyCard from "../models/LoyaltyCard.js";
+import LoyaltyTransaction from "../models/LoyaltyTransaction.js";
 import Manufacturer from "../models/Manufacturer.js";
 import Material from "../models/Material.js";
 import Message from "../models/Message.js";
@@ -17,6 +19,7 @@ import Review from "../models/Review.js";
 import SubCategory from "../models/SubCategory.js";
 import Translation from "../models/Translation.js";
 import User, { ADMIN_ROLES } from "../models/userModel.js";
+import { syncOrderLoyaltyEffects } from "../services/loyaltyService.js";
 import { syncUserCommerceData } from "../services/userProfileService.js";
 import {
   buildColorLookup,
@@ -65,6 +68,10 @@ const computeDiscountedPrice = (product) => {
 };
 
 const buildCardNumber = (index) => `DC-DEMO${String(index + 1).padStart(4, "0")}`;
+const roundMoney = (value) =>
+  Math.max(0, Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100);
+const addHours = (date, hours) => new Date(new Date(date).getTime() + hours * 60 * 60 * 1000);
+const getFirstName = (name) => String(name || "").trim().split(/\s+/).filter(Boolean)[0] || "Клієнт";
 
 const categoryDefs = [
   {
@@ -562,16 +569,229 @@ const locationDefs = [
 ];
 
 const userDefs = [
-  { name: "Olena Koval", email: `olena@${SEED_DOMAIN}`, phone: "+380500000101", city: "Kyiv", status: "active" },
-  { name: "Taras Melnyk", email: `taras@${SEED_DOMAIN}`, phone: "+380500000102", city: "Lviv", status: "active" },
-  { name: "Iryna Bondar", email: `iryna@${SEED_DOMAIN}`, phone: "+380500000103", city: "Dnipro", status: "active" },
-  { name: "Maksym Shevchuk", email: `maksym@${SEED_DOMAIN}`, phone: "+380500000104", city: "Odesa", status: "active" },
-  { name: "Sofiia Kravets", email: `sofiia@${SEED_DOMAIN}`, phone: "+380500000105", city: "Kharkiv", status: "active" },
-  { name: "Andrii Hnatiuk", email: `andrii@${SEED_DOMAIN}`, phone: "+380500000106", city: "Vinnytsia", status: "banned" },
-  { name: "Kateryna Dovhan", email: `kateryna@${SEED_DOMAIN}`, phone: "+380500000107", city: "Kyiv", status: "active" },
-  { name: "Bohdan Savchuk", email: `bohdan@${SEED_DOMAIN}`, phone: "+380500000108", city: "Lutsk", status: "active" },
-  { name: "Mariia Tkach", email: `mariia@${SEED_DOMAIN}`, phone: "+380500000109", city: "Rivne", status: "active" },
-  { name: "Roman Verbytskyi", email: `roman@${SEED_DOMAIN}`, phone: "+380500000110", city: "Cherkasy", status: "active" },
+  {
+    name: "Олена Коваль",
+    email: `olena@${SEED_DOMAIN}`,
+    phone: "+380500000101",
+    city: "Kyiv",
+    status: "active",
+    homeZone: "вітальні квартири-студії",
+    styleFocus: "світла тканина і м'яка посадка",
+    reviewTone: "уважно дивиться на шви, колір і комфорт",
+    orderPace: "планує покупку без поспіху",
+  },
+  {
+    name: "Тарас Мельник",
+    email: `taras@${SEED_DOMAIN}`,
+    phone: "+380500000102",
+    city: "Lviv",
+    status: "active",
+    homeZone: "кухні-вітальні",
+    styleFocus: "натуральне дерево і практичні поверхні",
+    reviewTone: "оцінює конструкцію і реальну зручність",
+    orderPace: "часто бронює самовивіз",
+  },
+  {
+    name: "Ірина Бондар",
+    email: `iryna@${SEED_DOMAIN}`,
+    phone: "+380500000103",
+    city: "Dnipro",
+    status: "active",
+    homeZone: "спальні",
+    styleFocus: "м'яке узголів'я і спокійні відтінки",
+    reviewTone: "пише детально про тканину і висоту спинки",
+    orderPace: "слідкує за графіком доставки",
+  },
+  {
+    name: "Максим Шевчук",
+    email: `maksym@${SEED_DOMAIN}`,
+    phone: "+380500000104",
+    city: "Odesa",
+    status: "active",
+    homeZone: "домашнього кабінету",
+    styleFocus: "ергономіка, габарити і робочий сценарій",
+    reviewTone: "звертає увагу на жорсткість, механізми й пакування",
+    orderPace: "часто уточнює статуси замовлення",
+  },
+  {
+    name: "Софія Кравець",
+    email: `sofiia@${SEED_DOMAIN}`,
+    phone: "+380500000105",
+    city: "Kharkiv",
+    status: "active",
+    homeZone: "компактної гостьової кімнати",
+    styleFocus: "акуратні форми і легкий візуальний силует",
+    reviewTone: "цінує зовнішній вигляд у живу і точність кольору",
+    orderPace: "любить заздалегідь планувати доставку",
+  },
+  {
+    name: "Катерина Довгань",
+    email: `kateryna@${SEED_DOMAIN}`,
+    phone: "+380500000107",
+    city: "Kyiv",
+    status: "active",
+    homeZone: "дитячої та сімейної зони",
+    styleFocus: "зносостійка оббивка і безпечні кути",
+    reviewTone: "перевіряє практичність і простоту догляду",
+    orderPace: "готова брати повторно, якщо сервіс швидкий",
+  },
+  {
+    name: "Богдан Савчук",
+    email: `bohdan@${SEED_DOMAIN}`,
+    phone: "+380500000108",
+    city: "Lutsk",
+    status: "active",
+    homeZone: "їдальні приватного будинку",
+    styleFocus: "стійка база і теплий відтінок дерева",
+    reviewTone: "оцінює збірку, вагу і відчуття міцності",
+    orderPace: "зазвичай замовляє після короткої консультації",
+  },
+  {
+    name: "Марія Ткач",
+    email: `mariia@${SEED_DOMAIN}`,
+    phone: "+380500000109",
+    city: "Rivne",
+    status: "active",
+    homeZone: "спальні з нейтральною палітрою",
+    styleFocus: "текстура тканини і відчуття затишку",
+    reviewTone: "пише емоційно, але предметно",
+    orderPace: "уважно перевіряє бонуси і картку лояльності",
+  },
+  {
+    name: "Роман Вербицький",
+    email: `roman@${SEED_DOMAIN}`,
+    phone: "+380500000110",
+    city: "Cherkasy",
+    status: "active",
+    homeZone: "вітальні з телевізійною зоною",
+    styleFocus: "глибина сидіння і габарити в розкладці",
+    reviewTone: "залишає короткі, але конкретні відгуки",
+    orderPace: "часто допитує про наявність на складі",
+  },
+  {
+    name: "Наталія Лисенко",
+    email: `nataliia@${SEED_DOMAIN}`,
+    phone: "+380500000111",
+    city: "Poltava",
+    status: "active",
+    homeZone: "світлої спальні",
+    styleFocus: "високе узголів'я і охайний кант",
+    reviewTone: "описує враження після реального користування",
+    orderPace: "часто бере доставку кур'єром",
+  },
+  {
+    name: "Владислав Мороз",
+    email: `vladyslav@${SEED_DOMAIN}`,
+    phone: "+380500000112",
+    city: "Ternopil",
+    status: "active",
+    homeZone: "домашнього офісу",
+    styleFocus: "зручна посадка і практична поверхня столу",
+    reviewTone: "пише по суті про щоденне використання",
+    orderPace: "слідкує за бонусами після завершених замовлень",
+  },
+  {
+    name: "Юлія Климчук",
+    email: `yuliia@${SEED_DOMAIN}`,
+    phone: "+380500000113",
+    city: "Ivano-Frankivsk",
+    status: "active",
+    homeZone: "передпокою та маленької вітальні",
+    styleFocus: "компактність і візуальна легкість",
+    reviewTone: "часто порівнює фото з реальністю",
+    orderPace: "любить швидкі відповіді в чаті",
+  },
+  {
+    name: "Дмитро Олійник",
+    email: `dmytro@${SEED_DOMAIN}`,
+    phone: "+380500000114",
+    city: "Zhytomyr",
+    status: "active",
+    homeZone: "кімнати для гостей",
+    styleFocus: "простий догляд і акуратна геометрія",
+    reviewTone: "цінує коли все збігається по розмірах",
+    orderPace: "не любить затримки в обробці замовлень",
+  },
+  {
+    name: "Аліна Черненко",
+    email: `alina@${SEED_DOMAIN}`,
+    phone: "+380500000115",
+    city: "Chernivtsi",
+    status: "active",
+    homeZone: "спальні в теплих тонах",
+    styleFocus: "м'яка тканина і делікатний силует",
+    reviewTone: "залишає розгорнуті відгуки після доставки",
+    orderPace: "помічає кожен етап від підтвердження до вручення",
+  },
+  {
+    name: "Андрій Гнатюк",
+    email: `andrii@${SEED_DOMAIN}`,
+    phone: "+380500000106",
+    city: "Vinnytsia",
+    status: "banned",
+    homeZone: "орендованого житла",
+    styleFocus: "бюджетні рішення",
+    reviewTone: "не використовується в публічних сид-даних",
+    orderPace: "історичний акаунт",
+  },
+  {
+    name: "Євгенія Стеценко",
+    email: `yevheniia@${SEED_DOMAIN}`,
+    phone: "+380500000116",
+    city: "Sumy",
+    status: "banned",
+    homeZone: "старої квартири",
+    styleFocus: "декоративні акценти",
+    reviewTone: "не використовується в публічних сид-даних",
+    orderPace: "історичний акаунт",
+  },
+];
+
+const REVIEW_TITLE_PATTERNS = [
+  "Вдалий вибір для дому",
+  "Гарно виглядає вживу",
+  "Сподобалась якість матеріалу",
+  "Зручніше, ніж очікували",
+  "Добре вписався в кімнату",
+  "Покупка без сюрпризів",
+  "Акуратна збірка і форма",
+  "Комфорт на кожен день",
+];
+
+const REVIEW_DELIVERY_NOTES = [
+  "Доставку погодили без затримок.",
+  "По статусах замовлення все було зрозуміло.",
+  "Менеджер швидко підтвердив наявність.",
+  "Самовивіз підготували в обіцяний день.",
+  "Кур'єр попередив завчасно і все занесли акуратно.",
+  "Упакування було нормальне, без пошкоджень.",
+];
+
+const REVIEW_FINISH_NOTES = [
+  "Тканина виглядає дорожче, ніж на фото.",
+  "Колір у реальності спокійний і не дешевить інтер'єр.",
+  "Шви рівні, краї акуратні, нічого не перекошено.",
+  "По габаритах усе збіглося з описом на сайті.",
+  "Посадка комфортна навіть після кількох годин.",
+  "Фактура матеріалу приємна і не слизька.",
+];
+
+const CHAT_CUSTOMER_PROMPTS = [
+  "Підкажіть, будь ласка, чи ця модель реально є в наявності саме зараз?",
+  "Чи можна зафіксувати ціну на кілька днів, поки погодимо доставку?",
+  "Хочу уточнити, який зараз статус по моєму замовленню.",
+  "Скажіть, будь ласка, чи спрацює моя дисконтна картка на наступне оформлення?",
+  "Чи є самовивіз у моєму місті і коли можна буде забрати?",
+  "Потрібно зрозуміти, чи підійде відтінок під теплу підлогу і світлі стіни.",
+];
+
+const CHAT_ADMIN_REPLIES = [
+  "Перевірили склад і магазин, модель доступна. Можемо тримати резерв до кінця дня.",
+  "Ціну та кошик можемо зафіксувати після підтвердження менеджером.",
+  "По замовленню бачу рух у системі, зараз статус оновлюється коректно.",
+  "Дисконтна картка активна, а бонуси підтягнуться після завершених замовлень.",
+  "Самовивіз доступний, підготуємо товар після підтвердження часу.",
+  "По кольору можу надіслати додаткові фото і уточнити фактичний відтінок тканини.",
 ];
 
 const DEMO_LOCATION_TRANSLATIONS = {
@@ -674,11 +894,20 @@ async function syncDemoTranslations() {
 }
 
 async function clearDemoData() {
-  const [seedUsers, seedProducts, seedLocations, seedCategories] = await Promise.all([
+  const [seedUsers, seedProducts, seedLocations, seedCategories, seedOrders] = await Promise.all([
     User.find({ email: seedEmailRegex }).select("_id").lean(),
     Product.find({ slug: seedPrefixRegex }).select("_id").lean(),
     Location.find({ nameKey: seedLocationRegex }).select("_id").lean(),
     Category.find({ category: seedPrefixRegex }).select("category").lean(),
+    Order.find({
+      $or: [
+        { comment: seedTextRegex },
+        { adminNote: seedTextRegex },
+        { "statusHistory.note": seedTextRegex },
+      ],
+    })
+      .select("_id user")
+      .lean(),
   ]);
 
   const userIds = seedUsers.map((item) => item._id);
@@ -686,6 +915,7 @@ async function clearDemoData() {
   const productIds = seedProducts.map((item) => item._id);
   const locationIds = seedLocations.map((item) => item._id);
   const categoryKeys = seedCategories.map((item) => item.category);
+  const orderIds = seedOrders.map((item) => item._id);
 
   await Promise.all([
     Cart.deleteMany({ user: { $in: userIds } }),
@@ -708,8 +938,13 @@ async function clearDemoData() {
         { user: { $in: userIds } },
         { comment: seedTextRegex },
         { adminNote: seedTextRegex },
+        { "statusHistory.note": seedTextRegex },
       ],
     }),
+    LoyaltyTransaction.deleteMany({
+      $or: [{ user: { $in: userIds } }, { order: { $in: orderIds } }, { usedOrderId: { $in: orderIds } }],
+    }),
+    LoyaltyCard.deleteMany({ user: { $in: userIds } }),
     InventoryMovement.deleteMany({
       $or: [
         { "meta.seedTag": SEED_TAG },
@@ -896,11 +1131,11 @@ async function seedProducts(referenceDictionaries = {}) {
 
 async function seedUsers(passwordHash) {
   const loyaltyByIndex = [
-    { tier: "gold", baseDiscountPct: 7 },
-    { tier: "silver", baseDiscountPct: 4 },
+    { tier: "gold", baseDiscountPct: 5 },
+    { tier: "silver", baseDiscountPct: 3 },
     { tier: "none", baseDiscountPct: 0 },
-    { tier: "silver", baseDiscountPct: 4 },
-    { tier: "gold", baseDiscountPct: 7 },
+    { tier: "silver", baseDiscountPct: 3 },
+    { tier: "gold", baseDiscountPct: 5 },
     { tier: "none", baseDiscountPct: 0 },
   ];
 
@@ -921,16 +1156,16 @@ async function seedUsers(passwordHash) {
               id: `addr-${index + 1}-home`,
               label: "Home",
               city: user.city,
-              addressLine: `${user.city}, Demo avenue ${index + 10}`,
-              comment: "Main test address",
+              addressLine: `${user.city}, вул. Демонстраційна ${index + 10}`,
+              comment: `[${SEED_TAG}] Основна адреса клієнта`,
               isPrimary: true,
             },
             {
               id: `addr-${index + 1}-work`,
               label: "Office",
               city: user.city,
-              addressLine: `${user.city}, Business street ${index + 20}`,
-              comment: "Secondary delivery point",
+              addressLine: `${user.city}, вул. Бізнесова ${index + 20}`,
+              comment: `[${SEED_TAG}] Додаткова адреса для доставки`,
               isPrimary: false,
             },
           ]
@@ -940,10 +1175,14 @@ async function seedUsers(passwordHash) {
       cardNumber: buildCardNumber(index),
       tier: loyaltyByIndex[index % loyaltyByIndex.length].tier,
       baseDiscountPct: loyaltyByIndex[index % loyaltyByIndex.length].baseDiscountPct,
+      bonusBalance: 0,
+      totalEarned: 0,
+      totalRedeemed: 0,
+      totalExpired: 0,
       totalSpent: 0,
       completedOrders: 0,
       lastOrderAt: index < 5 ? daysAgo(20 - index * 2) : null,
-      notes: "",
+      notes: `[${SEED_TAG}] ${user.orderPace}`,
       manualOverride: false,
     },
     isAiAssistant: false,
@@ -952,19 +1191,42 @@ async function seedUsers(passwordHash) {
     lastSeen: index < 3 ? daysAgo(0, 12 + index) : daysAgo(2 + index),
     lastActivityAt: index < 3 ? daysAgo(0, 12 + index) : daysAgo(2 + index),
     lastLoginAt: daysAgo(1 + index),
+    lastPage: index < 4 ? `/catalog/${["sofas", "beds", "chairs", "tables"][index % 4]}` : "/catalog",
     createdAt: daysAgo(140 - index * 7),
     updatedAt: daysAgo(5 - (index % 5)),
   }));
 
-  return User.insertMany(docs);
+  await User.collection.insertMany(docs);
+
+  const inserted = await User.find({ email: { $in: userDefs.map((user) => user.email) } })
+    .select("+passwordHash")
+    .lean();
+  const insertedByEmail = new Map(inserted.map((doc) => [doc.email, doc]));
+
+  return userDefs.map((definition) => ({
+    ...(insertedByEmail.get(definition.email) || {}),
+    seedProfile: definition,
+  }));
 }
 
 async function seedLikes(users, products) {
   const likeDocs = [];
   const bulkOps = [];
 
-  users.slice(0, 8).forEach((user, index) => {
-    const likedProducts = [products[index], products[index + 4], products[(index + 9) % products.length]];
+  users
+    .filter((user) => user.status === "active")
+    .forEach((user, index) => {
+      const likedProducts = Array.from(
+        new Map(
+          [
+            products[(index * 2) % products.length],
+            products[(index * 2 + 3) % products.length],
+            products[(index * 2 + 7) % products.length],
+            products[(index * 2 + 11) % products.length],
+          ].map((product) => [String(product._id), product])
+        ).values()
+      );
+
     const embeddedLikes = likedProducts.map((product) => ({
       productId: String(product._id),
       productName: product.name,
@@ -994,7 +1256,7 @@ async function seedLikes(users, products) {
         updatedAt: daysAgo(Math.max(0, 4 - index)),
       });
     });
-  });
+    });
 
   await Promise.all([User.bulkWrite(bulkOps), Like.insertMany(likeDocs)]);
 }
@@ -1126,35 +1388,94 @@ async function seedInventory(products, locations, admin) {
   );
 }
 
-async function seedOrders(users, products, locations) {
+const buildOrderStatusHistory = ({ status, createdAt, city, adminId = null }) => {
+  const history = [
+    {
+      status: "new",
+      changedAt: createdAt,
+      changedBy: null,
+      note: `[${SEED_TAG}] Замовлення створено клієнтом`,
+    },
+  ];
+
+  if (status === "new") return history;
+
+  history.push({
+    status: "confirmed",
+    changedAt: addHours(createdAt, 4),
+    changedBy: adminId,
+    note: `[${SEED_TAG}] Менеджер підтвердив замовлення`,
+  });
+
+  if (status === "confirmed") return history;
+  if (status === "cancelled") {
+    history.push({
+      status: "cancelled",
+      changedAt: addHours(createdAt, 18),
+      changedBy: adminId,
+      note: `[${SEED_TAG}] Клієнт переніс покупку до кращого бюджету`,
+    });
+    return history;
+  }
+
+  history.push({
+    status: "processing",
+    changedAt: addHours(createdAt, 18),
+    changedBy: adminId,
+    note: `[${SEED_TAG}] Замовлення передано в обробку для міста ${city}`,
+  });
+
+  if (status === "processing") return history;
+
+  history.push({
+    status: "shipped",
+    changedAt: addHours(createdAt, 42),
+    changedBy: adminId,
+    note: `[${SEED_TAG}] Передано у доставку або видано на самовивіз`,
+  });
+
+  if (status === "shipped") return history;
+
+  history.push({
+    status: "completed",
+    changedAt: addHours(createdAt, 78),
+    changedBy: adminId,
+    note: `[${SEED_TAG}] Замовлення успішно завершене`,
+  });
+
+  return history;
+};
+
+async function seedOrders(users, products, locations, admin) {
   const activeUsers = users.filter((user) => user.status === "active");
-  const pickupLocations = locations.filter((location) =>
-    ["showroom", "shop"].includes(location.type)
-  );
+  const pickupLocations = locations.filter((location) => ["showroom", "shop"].includes(location.type));
   const statusCycle = [
-    "completed",
     "completed",
     "shipped",
     "processing",
     "confirmed",
     "new",
     "cancelled",
+    "completed",
     "processing",
     "completed",
+    "confirmed",
+    "completed",
+    "shipped",
   ];
-  const totalOrders = 36;
+  const totalOrders = Math.max(54, activeUsers.length * 4);
 
   const docs = Array.from({ length: totalOrders }, (_item, index) => {
     const status = statusCycle[index % statusCycle.length];
     const user = activeUsers[index % activeUsers.length];
-    const itemCount = 1 + (index % 4);
+    const itemCount = 1 + (index % 3);
     const methodIndex = index % 3;
-    const selectedProducts = Array.from({ length: itemCount }, (_item, itemIndex) =>
-      products[(index * 2 + itemIndex * 3) % products.length]
+    const selectedProducts = Array.from({ length: itemCount }, (_entry, itemIndex) =>
+      products[(index * 3 + itemIndex * 5) % products.length]
     );
 
     const items = selectedProducts.map((product, itemIndex) => {
-      const qty = 1 + ((index + itemIndex) % 3);
+      const qty = 1 + ((index + itemIndex) % 2);
       const price = computeDiscountedPrice(product);
 
       return {
@@ -1167,15 +1488,23 @@ async function seedOrders(users, products, locations) {
       };
     });
 
-    const subtotal = items.reduce((sum, item) => sum + item.qty * item.price, 0);
+    const subtotal = roundMoney(items.reduce((sum, item) => sum + item.qty * item.price, 0));
     const pickupLocation = pickupLocations[index % pickupLocations.length];
     const method = methodIndex === 0 ? "pickup" : methodIndex === 1 ? "courier" : "nova_poshta";
-    const createdAt = daysAgo(Math.max(1, 110 - index * 3), 9 + (index % 6));
-    const loyaltyDiscount = Math.round(
+    const createdAt = daysAgo(Math.max(1, 118 - index * 2), 9 + (index % 6));
+    const loyaltyDiscount = roundMoney(
       subtotal * Math.max(0, Number(user.loyalty?.baseDiscountPct || 0)) / 100
     );
-    const rewardDiscount = status !== "cancelled" && index % 8 === 0 ? 700 : 0;
-    const cartTotal = Math.max(0, subtotal - loyaltyDiscount - rewardDiscount);
+    const rewardDiscount = 0;
+    const totalSavings = roundMoney(loyaltyDiscount + rewardDiscount);
+    const cartTotal = roundMoney(Math.max(0, subtotal - totalSavings));
+    const statusHistory = buildOrderStatusHistory({
+      status,
+      createdAt,
+      city: user.city,
+      adminId: admin?._id || null,
+    });
+    const lastStatus = statusHistory[statusHistory.length - 1];
 
     return {
       user: user._id,
@@ -1188,62 +1517,165 @@ async function seedOrders(users, products, locations) {
         city: user.city,
         method,
         pickupLocationId: method === "pickup" ? pickupLocation._id : null,
-        address: method === "courier" ? `${user.city}, Demo street ${index + 3}` : "",
-        npOffice: method === "nova_poshta" ? `Branch ${index + 1}` : "",
+        address: method === "courier" ? `${user.city}, вул. Клієнтська ${index + 3}` : "",
+        npOffice: method === "nova_poshta" ? `Відділення ${index + 1}` : "",
       },
-      comment: `[${SEED_TAG}] Demo order ${index + 1}`,
+      comment: `[${SEED_TAG}] ${user.name}: ${selectedProducts.map((product) => product.name.ua).join(", ")}`,
       items,
       totals: {
         subtotal,
         loyaltyDiscount,
         rewardDiscount,
-        totalSavings: loyaltyDiscount + rewardDiscount,
+        totalSavings,
         cartTotal,
       },
       loyaltySnapshot: {
-        cardNumber: buildCardNumber(index % activeUsers.length),
+        cardNumber: user.loyalty?.cardNumber || buildCardNumber(index % activeUsers.length),
         tier: user.loyalty?.tier || "none",
         baseDiscountPct: Number(user.loyalty?.baseDiscountPct || 0),
       },
-      appliedReward:
-        rewardDiscount > 0
-          ? {
-              rewardId: `seed-reward-${index + 1}`,
-              type: "manual_discount",
-              title: "Seeded promo voucher",
-              discountPct: 0,
-              amountOff: rewardDiscount,
-              minOrderTotal: 0,
-            }
-          : {
-              rewardId: "",
-              type: "",
-              title: "",
-              discountPct: 0,
-              amountOff: 0,
-              minOrderTotal: 0,
-            },
+      appliedReward: {
+        rewardId: "",
+        type: "",
+        title: "",
+        discountPct: 0,
+        amountOff: 0,
+        minOrderTotal: 0,
+      },
       status,
       scheduledAt:
-        status === "confirmed" || status === "processing"
+        status === "confirmed" || status === "processing" || status === "shipped"
           ? new Date(createdAt.getTime() + ((index % 4) + 1) * 24 * 60 * 60 * 1000)
           : null,
       adminNote:
         status === "cancelled"
-          ? `[${SEED_TAG}] Customer postponed the purchase`
+          ? `[${SEED_TAG}] Клієнт поставив покупку на паузу`
           : status === "processing" || status === "shipped"
-            ? `[${SEED_TAG}] Priority handling for city ${user.city}`
-            : "",
-      cancelledAt:
-        status === "cancelled"
-          ? new Date(createdAt.getTime() + 2 * 24 * 60 * 60 * 1000)
+            ? `[${SEED_TAG}] Пріоритетна обробка для міста ${user.city}`
+            : status === "completed"
+              ? `[${SEED_TAG}] Продаж завершено без претензій`
+              : "",
+      assignedTo:
+        status === "processing" || status === "shipped" || status === "completed"
+          ? admin?._id || null
           : null,
+      statusHistory,
+      cancelledAt: status === "cancelled" ? lastStatus.changedAt : null,
       createdAt,
-      updatedAt: new Date(createdAt.getTime() + 6 * 60 * 60 * 1000),
+      updatedAt: lastStatus.changedAt,
     };
   });
 
-  return Order.insertMany(docs);
+  const inserted = await Order.insertMany(docs);
+  const ordersByUser = inserted.reduce((acc, order) => {
+    const key = String(order.user);
+    if (!acc.has(key)) acc.set(key, []);
+    acc.get(key).push(order._id);
+    return acc;
+  }, new Map());
+
+  await User.bulkWrite(
+    Array.from(ordersByUser.entries()).map(([userId, orderIds]) => ({
+      updateOne: {
+        filter: { _id: userId },
+        update: { $set: { orders: orderIds } },
+      },
+    }))
+  );
+
+  return inserted.map((order) => (order?.toObject ? order.toObject() : order));
+}
+
+async function seedLegacyRewards(users, orders) {
+  const completedOrdersByUser = orders.reduce((acc, order) => {
+    if (order.status !== "completed") return acc;
+    const key = String(order.user);
+    if (!acc.has(key)) acc.set(key, []);
+    acc.get(key).push(order);
+    return acc;
+  }, new Map());
+
+  const updates = users
+    .filter((user) => user.status === "active")
+    .map((user, index) => {
+      const completedOrders = completedOrdersByUser.get(String(user._id)) || [];
+      const latestCompletedOrder = completedOrders.at(-1) || null;
+      const rewards = [
+        {
+          rewardId: `legacy-active-${index + 1}`,
+          type: "next_order_discount",
+          title: "Персональна знижка на наступне замовлення",
+          description: `[${SEED_TAG}] Разова знижка для активного клієнта`,
+          discountPct: 0,
+          amountOff: 500 + (index % 4) * 250,
+          minOrderTotal: 7000 + (index % 3) * 2000,
+          status: "active",
+          issuedAt: daysAgo(8 + index),
+          expiresAt: daysAhead(20 + index),
+          usedAt: null,
+          usedOrderId: null,
+          note: `[${SEED_TAG}] Автоматичний сид для перевірки checkout`,
+        },
+      ];
+
+      if (index % 2 === 0) {
+        rewards.push({
+          rewardId: `legacy-expired-${index + 1}`,
+          type: "manual_discount",
+          title: "Сезонна пропозиція",
+          description: `[${SEED_TAG}] Історична акція з вичерпаним терміном`,
+          discountPct: 10,
+          amountOff: 0,
+          minOrderTotal: 12000,
+          status: "expired",
+          issuedAt: daysAgo(55 + index),
+          expiresAt: daysAgo(5 + index),
+          usedAt: null,
+          usedOrderId: null,
+          note: `[${SEED_TAG}] Прострочена винагорода`,
+        });
+      }
+
+      if (latestCompletedOrder && index % 3 === 0) {
+        rewards.push({
+          rewardId: `legacy-used-${index + 1}`,
+          type: "manual_discount",
+          title: "Компенсація за повторну покупку",
+          description: `[${SEED_TAG}] Використана винагорода в історії клієнта`,
+          discountPct: 0,
+          amountOff: 900 + (index % 3) * 150,
+          minOrderTotal: 0,
+          status: "used",
+          issuedAt: daysAgo(35 + index),
+          expiresAt: daysAhead(12 + index),
+          usedAt: addHours(latestCompletedOrder.updatedAt || latestCompletedOrder.createdAt, 2),
+          usedOrderId: latestCompletedOrder._id,
+          note: `[${SEED_TAG}] Уже списана винагорода`,
+        });
+      }
+
+      return {
+        updateOne: {
+          filter: { _id: user._id },
+          update: { $set: { rewards } },
+        },
+      };
+    });
+
+  if (!updates.length) return;
+  await User.bulkWrite(updates);
+}
+
+async function seedLoyaltyArtifacts(users, orders) {
+  const completedOrders = orders
+    .filter((order) => order.status === "completed")
+    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+
+  for (const order of completedOrders) {
+    await syncOrderLoyaltyEffects(order);
+  }
+
+  await seedLegacyRewards(users, orders);
 }
 
 async function syncSeedUsers(users) {
@@ -1283,33 +1715,43 @@ async function syncOrderLoyaltySnapshots(loyaltyUsers) {
   );
 }
 
+const buildReviewText = ({ user, product, productIndex, reviewIndex, rating }) => {
+  const profile = user.seedProfile || {};
+  const firstName = getFirstName(user.name);
+  const finishNote = REVIEW_FINISH_NOTES[(productIndex + reviewIndex) % REVIEW_FINISH_NOTES.length];
+  const deliveryNote = REVIEW_DELIVERY_NOTES[(productIndex * 2 + reviewIndex) % REVIEW_DELIVERY_NOTES.length];
+  const toneNote =
+    rating >= 5
+      ? "Після кількох днів користування враження дуже хороше, модель виглядає зібрано і дорого."
+      : rating === 4
+        ? "Є дрібні нюанси по відчуттю жорсткості, але в цілому покупкою задоволені."
+        : "Потрібно уважно дивитися на свої розміри кімнати, але база по якості цілком нормальна.";
+
+  return (
+    `${firstName}, ${user.city}. Для ${profile.homeZone || "домашнього інтер'єру"} обрали ` +
+    `${product.name.ua}. Найбільше сподобалось, що тут відчувається ${profile.styleFocus || "хороший баланс форми і комфорту"}. ` +
+    `${finishNote} ${deliveryNote} ${toneNote} ${profile.reviewTone || ""}`.trim()
+  );
+};
+
 async function seedReviews(users, products) {
   const activeUsers = users.filter((user) => user.status === "active");
-  const reviewTitles = [
-    "Looks premium in person",
-    "Good value for the size",
-    "Delivery was on time",
-    "Comfort is better than expected",
-    "Solid quality for daily use",
-    "Fits the room perfectly",
-  ];
 
-  const docs = products.slice(0, 20).flatMap((product, productIndex) => {
-    const reviewsPerProduct = 1 + (productIndex % 3);
+  const docs = products.flatMap((product, productIndex) => {
+    const reviewsPerProduct = Math.min(activeUsers.length, 4 + (productIndex % 4));
 
     return Array.from({ length: reviewsPerProduct }, (_item, reviewIndex) => {
-      const rating = 3 + ((productIndex + reviewIndex) % 3);
-      const user = activeUsers[(productIndex + reviewIndex) % activeUsers.length];
-      const createdAt = daysAgo(90 - productIndex * 2 - reviewIndex, 10 + (reviewIndex % 6));
+      const ratingCycle = [5, 4, 5, 5, 4, 5, 3];
+      const rating = ratingCycle[(productIndex + reviewIndex) % ratingCycle.length];
+      const user = activeUsers[(productIndex * 2 + reviewIndex) % activeUsers.length];
+      const createdAt = daysAgo(95 - productIndex * 2 - reviewIndex, 10 + (reviewIndex % 6));
 
       return {
         product: product._id,
         user: user._id,
         rating,
-        title: reviewTitles[(productIndex + reviewIndex) % reviewTitles.length],
-        text:
-          `${product.name.en} received a seeded review from ${user.name}. ` +
-          `This helps test storefront review lists, rating stats, and admin moderation on realistic data.`,
+        title: REVIEW_TITLE_PATTERNS[(productIndex + reviewIndex) % REVIEW_TITLE_PATTERNS.length],
+        text: buildReviewText({ user, product, productIndex, reviewIndex, rating }),
         isApproved: true,
         createdAt,
         updatedAt: new Date(createdAt.getTime() + 2 * 60 * 60 * 1000),
@@ -1367,37 +1809,36 @@ async function seedReviews(users, products) {
   );
 }
 
-async function seedMessages(users, admin) {
+async function seedMessages(users, admin, products, orders) {
   const adminId = String(admin._id);
-  const prompts = [
-    "Hello, can you confirm if the sofa is available this week?",
-    "Do you have pickup in Kyiv for this item?",
-    "Please advise on delivery time for Lviv.",
-    "Can I reserve the bed before payment?",
-    "I need dimensions for the armchair model.",
-    "Can you send me a photo of the wood finish?",
-  ];
-
-  const replies = [
-    "Yes, the item is available and we can reserve it for two days.",
-    "Pickup is available in Kyiv showroom after confirmation.",
-    "Delivery to Lviv usually takes two to three business days.",
-    "Reservation is possible after a short confirmation call.",
-    "I have sent the dimensions and stock note in the chat thread.",
-    "I have attached additional finish references and stock notes.",
-  ];
+  const ordersByUser = orders.reduce((acc, order) => {
+    const key = String(order.user);
+    if (!acc.has(key)) acc.set(key, []);
+    acc.get(key).push(order);
+    return acc;
+  }, new Map());
 
   const docs = users
     .filter((user) => user.status === "active")
     .flatMap((user, index) => {
       const userId = String(user._id);
-      const baseDate = daysAgo(Math.max(1, 12 - index), 10 + (index % 6));
+      const baseDate = daysAgo(Math.max(1, 16 - index), 10 + (index % 6));
+      const featuredProduct = products[(index * 3) % products.length];
+      const alternateProduct = products[(index * 3 + 5) % products.length];
+      const latestOrder = (ordersByUser.get(userId) || [])
+        .slice()
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
+      const loyaltyCard = user.loyalty?.cardNumber || buildCardNumber(index);
+      const latestOrderStatus = latestOrder?.status || "new";
+      const firstName = getFirstName(user.name);
 
       return [
         {
           sender: userId,
           receiver: adminId,
-          text: prompts[index % prompts.length],
+          text:
+            `${CHAT_CUSTOMER_PROMPTS[index % CHAT_CUSTOMER_PROMPTS.length]} ` +
+            `Цікавить товар "${featuredProduct.name.ua}" для ${user.seedProfile?.homeZone || "квартири"}.`,
           isGuest: false,
           guestName: "",
           isRead: true,
@@ -1409,7 +1850,9 @@ async function seedMessages(users, admin) {
         {
           sender: adminId,
           receiver: userId,
-          text: replies[index % replies.length],
+          text:
+            `${CHAT_ADMIN_REPLIES[index % CHAT_ADMIN_REPLIES.length]} ` +
+            `По "${featuredProduct.name.ua}" можемо зорієнтувати ще й по кольору та строках.`,
           isGuest: false,
           guestName: "",
           isRead: true,
@@ -1421,7 +1864,9 @@ async function seedMessages(users, admin) {
         {
           sender: userId,
           receiver: adminId,
-          text: `Thanks, please keep order slot ${index + 1} in mind.`,
+          text:
+            `Дякую. Ще підкажіть по замовленню ${index + 1}: зараз у мене в історії статус ` +
+            `"${latestOrderStatus}". Хочу зрозуміти, коли краще чекати рух.`,
           isGuest: false,
           guestName: "",
           isRead: index % 2 === 0,
@@ -1433,7 +1878,10 @@ async function seedMessages(users, admin) {
         {
           sender: adminId,
           receiver: userId,
-          text: `We marked your request and can offer pickup or courier for order slot ${index + 1}.`,
+          text:
+            `${firstName}, бачу ваше замовлення і картку ${loyaltyCard}. ` +
+            `Після завершених покупок бонуси підтягнуться автоматично, а по "${alternateProduct.name.ua}" ` +
+            `можемо окремо перевірити склад і самовивіз.`,
           isGuest: false,
           guestName: "",
           isRead: index % 3 !== 0,
@@ -1441,6 +1889,34 @@ async function seedMessages(users, admin) {
           meta: { seedTag: SEED_TAG },
           createdAt: new Date(baseDate.getTime() + 80 * 60 * 1000),
           updatedAt: new Date(baseDate.getTime() + 80 * 60 * 1000),
+        },
+        {
+          sender: userId,
+          receiver: adminId,
+          text:
+            `Добре, тоді залиште, будь ласка, нотатку що для мене важливі ` +
+            `${user.seedProfile?.styleFocus || "точний колір і габарити"}. Якщо буде оновлення по статусу, напишіть сюди.`,
+          isGuest: false,
+          guestName: "",
+          isRead: index % 4 !== 0,
+          source: "human",
+          meta: { seedTag: SEED_TAG },
+          createdAt: new Date(baseDate.getTime() + 120 * 60 * 1000),
+          updatedAt: new Date(baseDate.getTime() + 120 * 60 * 1000),
+        },
+        {
+          sender: adminId,
+          receiver: userId,
+          text:
+            `Нотатку додали. Коли статус зміниться, чат оновиться автоматично. ` +
+            `Також зафіксували побажання щодо "${featuredProduct.name.ua}" і доставки в ${user.city}.`,
+          isGuest: false,
+          guestName: "",
+          isRead: index % 3 !== 0,
+          source: "human",
+          meta: { seedTag: SEED_TAG },
+          createdAt: new Date(baseDate.getTime() + 145 * 60 * 1000),
+          updatedAt: new Date(baseDate.getTime() + 145 * 60 * 1000),
         },
       ];
     });
@@ -1480,11 +1956,12 @@ async function main() {
   await seedInventory(products, locations, admin);
   await seedLikes(users, products);
   await seedCarts(users, products);
-  await seedOrders(users, products, locations);
+  const orders = await seedOrders(users, products, locations, admin);
+  await seedLoyaltyArtifacts(users, orders);
   const loyaltyUsers = await syncSeedUsers(users);
   await syncOrderLoyaltySnapshots(loyaltyUsers);
   await seedReviews(users, products);
-  await seedMessages(users, admin);
+  await seedMessages(users, admin, products, orders);
 
   const summary = {
     seedTag: SEED_TAG,
@@ -1510,6 +1987,10 @@ async function main() {
       }),
       carts: await Cart.countDocuments({ user: { $in: users.map((user) => user._id) } }),
       likes: await Like.countDocuments({ user: { $in: users.map((user) => user._id) } }),
+      loyaltyCards: await LoyaltyCard.countDocuments({ user: { $in: users.map((user) => user._id) } }),
+      loyaltyTransactions: await LoyaltyTransaction.countDocuments({
+        user: { $in: users.map((user) => user._id) },
+      }),
     },
     sampleUsers: users.map((user) => ({
       email: user.email,
