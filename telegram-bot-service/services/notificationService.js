@@ -1,6 +1,7 @@
 import TelegramBinding from "../models/TelegramBinding.js";
 import TelegramNotificationLog from "../models/TelegramNotificationLog.js";
 import { safeSendTelegramMessage } from "../integrations/telegramApi.js";
+import { createHttpError } from "../utils/httpError.js";
 import { markBindingBlocked } from "./bindingService.js";
 
 const TYPE_LABELS = {
@@ -14,12 +15,28 @@ const TYPE_LABELS = {
   service: "Сервісне повідомлення",
 };
 
+const SUPPORTED_TYPES = new Set(Object.keys(TYPE_LABELS));
+
 const statusLabels = {
   processing: "в обробці",
   confirmed: "підтверджено",
   shipped: "відправлено",
   delivered: "доставлено",
   cancelled: "скасовано",
+};
+
+const html = (value) =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+const hasValue = (value) => value !== undefined && value !== null && String(value).trim() !== "";
+
+const normalizeNotificationType = (type) => {
+  const normalized = String(type || "service").trim();
+  if (SUPPORTED_TYPES.has(normalized)) return normalized;
+  throw createHttpError(400, "Unsupported notification type", "UNSUPPORTED_NOTIFICATION_TYPE");
 };
 
 const websiteButton = (url) =>
@@ -35,16 +52,16 @@ const buildNotificationText = ({ type, title, message, payload = {} }) => {
     const status = statusLabels[payload.status] || payload.status || "";
     return [
       "<b>Оновлення замовлення</b>",
-      orderNumber ? `Замовлення: ${orderNumber}` : "",
-      status ? `Статус: ${status}` : "",
-      payload.total ? `Сума: ${payload.total}` : "",
-      message || "",
+      hasValue(orderNumber) ? `Замовлення: ${html(orderNumber)}` : "",
+      hasValue(status) ? `Статус: ${html(status)}` : "",
+      hasValue(payload.total) ? `Сума: ${html(payload.total)}` : "",
+      message ? html(message) : "",
     ]
       .filter(Boolean)
       .join("\n");
   }
 
-  return [`<b>${title || TYPE_LABELS[type] || "Повідомлення"}</b>`, message || ""]
+  return [`<b>${html(title || TYPE_LABELS[type] || "Повідомлення")}</b>`, message ? html(message) : ""]
     .filter(Boolean)
     .join("\n");
 };
@@ -57,11 +74,17 @@ export const sendNotificationToUser = async ({
   payload = {},
   url = "",
 }) => {
-  const binding = await TelegramBinding.findOne({ websiteUserId, status: "active" });
+  const normalizedUserId = String(websiteUserId || "").trim();
+  if (!normalizedUserId) {
+    throw createHttpError(400, "websiteUserId is required", "WEBSITE_USER_ID_REQUIRED");
+  }
+
+  const notificationType = normalizeNotificationType(type);
+  const binding = await TelegramBinding.findOne({ websiteUserId: normalizedUserId, status: "active" });
   if (!binding) {
     await TelegramNotificationLog.create({
-      websiteUserId,
-      type,
+      websiteUserId: normalizedUserId,
+      type: notificationType,
       title,
       status: "skipped",
       reason: "telegram_not_linked",
@@ -70,12 +93,12 @@ export const sendNotificationToUser = async ({
     return { ok: false, status: "skipped", reason: "telegram_not_linked" };
   }
 
-  if (binding.notificationPreferences?.[type] === false) {
+  if (binding.notificationPreferences?.[notificationType] === false) {
     await TelegramNotificationLog.create({
-      websiteUserId,
+      websiteUserId: normalizedUserId,
       telegramUserId: binding.telegramUserId,
       chatId: binding.chatId,
-      type,
+      type: notificationType,
       title,
       status: "skipped",
       reason: "disabled_by_user",
@@ -87,15 +110,15 @@ export const sendNotificationToUser = async ({
   try {
     await safeSendTelegramMessage({
       chatId: binding.chatId,
-      text: buildNotificationText({ type, title, message, payload }),
+      text: buildNotificationText({ type: notificationType, title, message, payload }),
       replyMarkup: websiteButton(url || payload.url),
     });
 
     await TelegramNotificationLog.create({
-      websiteUserId,
+      websiteUserId: normalizedUserId,
       telegramUserId: binding.telegramUserId,
       chatId: binding.chatId,
-      type,
+      type: notificationType,
       title,
       status: "sent",
       payload,
@@ -113,10 +136,10 @@ export const sendNotificationToUser = async ({
     }
 
     await TelegramNotificationLog.create({
-      websiteUserId,
+      websiteUserId: normalizedUserId,
       telegramUserId: binding.telegramUserId,
       chatId: binding.chatId,
-      type,
+      type: notificationType,
       title,
       status: "failed",
       reason: error.message,
@@ -135,6 +158,7 @@ export const sendCampaignNotification = async ({
   payload = {},
   url = "",
 }) => {
+  const notificationType = normalizeNotificationType(type);
   const targetUserIds = websiteUserIds.map((id) => String(id || "").trim()).filter(Boolean);
   const bindings = targetUserIds.length
     ? await TelegramBinding.find({ websiteUserId: { $in: targetUserIds }, status: "active" })
@@ -145,7 +169,7 @@ export const sendCampaignNotification = async ({
     results.push(
       await sendNotificationToUser({
         websiteUserId: binding.websiteUserId,
-        type,
+        type: notificationType,
         title,
         message,
         payload,

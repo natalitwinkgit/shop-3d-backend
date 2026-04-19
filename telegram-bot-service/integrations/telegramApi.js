@@ -52,6 +52,23 @@ export const setTelegramWebhook = async (url) =>
     allowed_updates: ["message", "callback_query"],
   });
 
+export const setTelegramCommands = async (commands = []) =>
+  callTelegram("setMyCommands", {
+    commands,
+    scope: { type: "default" },
+    language_code: "uk",
+  });
+
+export const setTelegramMenuButton = async () =>
+  callTelegram("setChatMenuButton", {
+    menu_button: { type: "commands" },
+  });
+
+export const configureTelegramBotMenu = async (commands = []) => {
+  await setTelegramCommands(commands);
+  await setTelegramMenuButton();
+};
+
 export const deleteTelegramWebhook = async () => callTelegram("deleteWebhook", {});
 
 export const getTelegramUpdates = async ({ offset = 0, timeout = 30 } = {}) =>

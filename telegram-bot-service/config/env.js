@@ -32,7 +32,7 @@ export const telegramEnv = {
   internalApiKey: trim(process.env.TELEGRAM_INTERNAL_API_KEY),
   websiteBaseUrl: trim(process.env.WEBSITE_BASE_URL || process.env.CLIENT_URL),
   websiteInternalApiUrl: trim(process.env.WEBSITE_INTERNAL_API_URL),
-  websiteInternalApiKey: trim(process.env.WEBSITE_INTERNAL_API_KEY),
+  websiteInternalApiKey: trim(process.env.WEBSITE_INTERNAL_API_KEY || process.env.TELEGRAM_INTERNAL_API_KEY),
   tokenPepper: trim(process.env.TELEGRAM_TOKEN_PEPPER || process.env.JWT_SECRET),
   bindCodeTtlMinutes: toNumber(process.env.TELEGRAM_BIND_CODE_TTL_MINUTES, 10),
   loginTtlMinutes: toNumber(process.env.TELEGRAM_LOGIN_TTL_MINUTES, 5),

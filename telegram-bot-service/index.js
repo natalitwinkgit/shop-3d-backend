@@ -7,10 +7,12 @@ import {
   disconnectTelegramDatabase,
 } from "./config/database.js";
 import {
+  configureTelegramBotMenu,
   deleteTelegramWebhook,
   setTelegramWebhook,
 } from "./integrations/telegramApi.js";
 import { startTelegramPolling, stopTelegramPolling } from "./polling.js";
+import { TELEGRAM_BOT_COMMANDS } from "./services/botService.js";
 import { logger } from "./utils/logger.js";
 
 const start = async () => {
@@ -22,6 +24,10 @@ const start = async () => {
 
   server.listen(telegramEnv.port, async () => {
     logger.info("Telegram bot service started", { port: telegramEnv.port });
+
+    await configureTelegramBotMenu(TELEGRAM_BOT_COMMANDS).catch((error) => {
+      logger.warn("Telegram bot command menu setup failed", {}, error);
+    });
 
     if (telegramEnv.publicWebhookUrl) {
       const webhookUrl = `${telegramEnv.publicWebhookUrl.replace(/\/+$/, "")}/telegram/webhook`;

@@ -52,6 +52,7 @@ export const getBindingByUserController = asyncHandler(async (req, res) => {
           username: binding.username,
           firstName: binding.firstName,
           lastName: binding.lastName,
+          userPreview: binding.userPreview || {},
           linkedAt: binding.linkedAt,
           notificationPreferences: binding.notificationPreferences,
         }

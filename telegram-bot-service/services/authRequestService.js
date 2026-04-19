@@ -1,3 +1,5 @@
+import mongoose from "mongoose";
+
 import TelegramAuthRequest from "../models/TelegramAuthRequest.js";
 import { telegramEnv } from "../config/env.js";
 import { createHttpError } from "../utils/httpError.js";
@@ -15,6 +17,7 @@ import {
   normalizeTelegramProfile,
 } from "./bindingService.js";
 import { safeSendTelegramMessage } from "../integrations/telegramApi.js";
+import { webAppClient } from "../integrations/webAppClient.js";
 
 const REQUEST_TTL_BY_KIND = {
   bind: () => telegramEnv.bindCodeTtlMinutes,
@@ -29,6 +32,16 @@ const assertRequestToken = (request, requestToken) => {
   if (!requestToken || hashSecret(requestToken) !== request.requestTokenHash) {
     throw createHttpError(401, "Invalid request token", "INVALID_REQUEST_TOKEN");
   }
+};
+
+const findRequestById = async ({ requestId, kind }) => {
+  if (!mongoose.Types.ObjectId.isValid(requestId)) {
+    throw createHttpError(404, "Request not found", "REQUEST_NOT_FOUND");
+  }
+
+  const request = await TelegramAuthRequest.findOne({ _id: requestId, kind });
+  if (!request) throw createHttpError(404, "Request not found", "REQUEST_NOT_FOUND");
+  return request;
 };
 
 const serializeRequest = (request, extra = {}) => ({
@@ -146,9 +159,170 @@ export const confirmBindCode = async ({ code, from, chat }) => {
   return { request: serializeRequest(request), binding };
 };
 
+export const prepareBindCodeConfirmation = async ({ code, from, chat }) => {
+  const normalizedCode = String(code || "").replace(/\D/g, "");
+  if (normalizedCode.length < 4) {
+    throw createHttpError(400, "Invalid binding code", "INVALID_BIND_CODE");
+  }
+
+  const telegramProfile = normalizeTelegramProfile(from, chat);
+  const request = await TelegramAuthRequest.findOne({
+    kind: "bind",
+    codeHash: hashSecret(normalizedCode),
+    status: "pending",
+  });
+
+  if (!request) {
+    await writeAuditLog({
+      eventType: "bind.code_invalid",
+      telegramUserId: telegramProfile.telegramUserId,
+      chatId: telegramProfile.chatId,
+      ok: false,
+      reason: "invalid_code",
+    });
+    throw createHttpError(404, "Binding code was not found", "BIND_CODE_NOT_FOUND");
+  }
+
+  if (isExpired(request)) {
+    request.status = "expired";
+    await request.save();
+    throw createHttpError(410, "Binding code expired", "BIND_CODE_EXPIRED");
+  }
+
+  return serializeRequest(request);
+};
+
+export const confirmBindCodeWithContact = async ({ code, phone, from, chat }) => {
+  const normalizedPhone = String(phone || "").trim();
+  if (!normalizedPhone) {
+    throw createHttpError(400, "Phone is required", "PHONE_REQUIRED");
+  }
+
+  const normalizedCode = String(code || "").replace(/\D/g, "");
+  if (normalizedCode.length < 4) {
+    throw createHttpError(400, "Invalid binding code", "INVALID_BIND_CODE");
+  }
+
+  const request = await TelegramAuthRequest.findOne({
+    kind: "bind",
+    codeHash: hashSecret(normalizedCode),
+    status: "pending",
+  });
+
+  const telegramProfile = normalizeTelegramProfile(from, chat);
+
+  if (!request) {
+    await writeAuditLog({
+      eventType: "bind.code_invalid",
+      telegramUserId: telegramProfile.telegramUserId,
+      chatId: telegramProfile.chatId,
+      ok: false,
+      reason: "invalid_code",
+    });
+    throw createHttpError(404, "Binding code was not found", "BIND_CODE_NOT_FOUND");
+  }
+
+  request.attemptCount += 1;
+  if (request.attemptCount > request.maxAttempts) {
+    request.status = "cancelled";
+    await request.save();
+    throw createHttpError(429, "Too many attempts for this code", "TOO_MANY_CODE_ATTEMPTS");
+  }
+
+  if (isExpired(request)) {
+    request.status = "expired";
+    await request.save();
+    throw createHttpError(410, "Binding code expired", "BIND_CODE_EXPIRED");
+  }
+
+  const phoneUpdateResponse = await webAppClient.updateUserPhoneFromTelegram({
+    websiteUserId: request.websiteUserId,
+    phone: normalizedPhone,
+  });
+
+  if (!phoneUpdateResponse.ok) {
+    const code =
+      phoneUpdateResponse.data?.code ||
+      (phoneUpdateResponse.unavailable ? "WEBSITE_API_UNAVAILABLE" : "WEBSITE_PHONE_UPDATE_FAILED");
+    const status = phoneUpdateResponse.status || (phoneUpdateResponse.unavailable ? 503 : 502);
+    throw createHttpError(
+      status,
+      phoneUpdateResponse.data?.message || "Failed to update website user phone",
+      code
+    );
+  }
+
+  const userPreview = {
+    ...(request.metadata?.userPreview || {}),
+    ...(phoneUpdateResponse.data?.userPreview || {}),
+  };
+
+  const binding = await bindTelegramAccount({
+    websiteUserId: request.websiteUserId,
+    telegramProfile,
+    userPreview,
+  });
+
+  request.telegramUserId = telegramProfile.telegramUserId;
+  request.chatId = telegramProfile.chatId;
+  request.status = "confirmed";
+  request.confirmedAt = new Date();
+  request.metadata = {
+    ...(request.metadata || {}),
+    telegramContactPhone: normalizedPhone,
+  };
+  await request.save();
+
+  await writeAuditLog({
+    eventType: "bind.code_contact_confirmed",
+    websiteUserId: request.websiteUserId,
+    telegramUserId: telegramProfile.telegramUserId,
+    chatId: telegramProfile.chatId,
+    requestId: String(request._id),
+  });
+
+  return { request: serializeRequest(request), binding };
+};
+
+export const confirmBindByPhoneContact = async ({ phone, from, chat }) => {
+  const normalizedPhone = String(phone || "").trim();
+  if (!normalizedPhone) {
+    throw createHttpError(400, "Phone is required", "PHONE_REQUIRED");
+  }
+
+  const telegramProfile = normalizeTelegramProfile(from, chat);
+  const response = await webAppClient.resolveUserByPhone(normalizedPhone);
+  if (!response.ok) {
+    const code =
+      response.data?.code ||
+      (response.unavailable ? "WEBSITE_API_UNAVAILABLE" : "TELEGRAM_PHONE_NOT_FOUND");
+    const status = response.status || (response.unavailable ? 503 : 404);
+    throw createHttpError(status, response.data?.message || "No account found for this phone", code);
+  }
+
+  const websiteUserId = response.data?.websiteUserId;
+  if (!websiteUserId) {
+    throw createHttpError(502, "Website response does not contain user id", "WEBSITE_USER_ID_MISSING");
+  }
+
+  const binding = await bindTelegramAccount({
+    websiteUserId,
+    telegramProfile,
+    userPreview: response.data?.userPreview || { phone: normalizedPhone },
+  });
+
+  await writeAuditLog({
+    eventType: "bind.contact_confirmed",
+    websiteUserId,
+    telegramUserId: telegramProfile.telegramUserId,
+    chatId: telegramProfile.chatId,
+  });
+
+  return { binding };
+};
+
 export const getRequestStatus = async ({ requestId, kind, requestToken = "" }) => {
-  const request = await TelegramAuthRequest.findOne({ _id: requestId, kind });
-  if (!request) throw createHttpError(404, "Request not found", "REQUEST_NOT_FOUND");
+  const request = await findRequestById({ requestId, kind });
   assertRequestToken(request, requestToken);
 
   if (request.status === "pending" && isExpired(request)) {
@@ -162,8 +336,8 @@ export const getRequestStatus = async ({ requestId, kind, requestToken = "" }) =
 const sendActionRequestToTelegram = async ({ request, binding, kind }) => {
   const actionText =
     kind === "login"
-      ? "Підтвердити вхід на сайт"
-      : "Підтвердити відновлення доступу";
+      ? "✅ Підтвердити вхід"
+      : "🔐 Підтвердити відновлення";
   const body =
     kind === "login"
       ? "Хтось намагається увійти у ваш акаунт меблевого магазину через Telegram.\n\nЯкщо це ви, натисніть кнопку нижче."
@@ -237,8 +411,7 @@ export const createActionRequest = async ({ kind, websiteUserId, metadata = {} }
 
 export const confirmActionRequestFromTelegram = async ({ requestId, kind, from, chat }) => {
   const telegramProfile = normalizeTelegramProfile(from, chat);
-  const request = await TelegramAuthRequest.findOne({ _id: requestId, kind });
-  if (!request) throw createHttpError(404, "Request not found", "REQUEST_NOT_FOUND");
+  const request = await findRequestById({ requestId, kind });
 
   if (request.status !== "pending") {
     throw createHttpError(409, "Request is not pending", "REQUEST_NOT_PENDING");
@@ -277,8 +450,7 @@ export const confirmActionRequestFromTelegram = async ({ requestId, kind, from, 
 };
 
 export const redeemActionRequest = async ({ requestId, kind, requestToken }) => {
-  const request = await TelegramAuthRequest.findOne({ _id: requestId, kind });
-  if (!request) throw createHttpError(404, "Request not found", "REQUEST_NOT_FOUND");
+  const request = await findRequestById({ requestId, kind });
   assertRequestToken(request, requestToken);
 
   if (request.status === "pending" && isExpired(request)) {

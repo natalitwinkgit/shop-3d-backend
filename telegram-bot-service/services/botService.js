@@ -1,10 +1,11 @@
 import { telegramEnv } from "../config/env.js";
 import { answerTelegramCallback, sendTelegramMessage } from "../integrations/telegramApi.js";
 import { webAppClient } from "../integrations/webAppClient.js";
-import { createHttpError } from "../utils/httpError.js";
 import {
+  confirmBindByPhoneContact,
   confirmActionRequestFromTelegram,
-  confirmBindCode,
+  confirmBindCodeWithContact,
+  prepareBindCodeConfirmation,
 } from "./authRequestService.js";
 import {
   getActiveBindingByTelegramUserId,
@@ -19,26 +20,140 @@ const html = (value) =>
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 
-const siteUrl = (path = "") => {
-  if (!telegramEnv.websiteBaseUrl) return "";
-  return `${telegramEnv.websiteBaseUrl.replace(/\/+$/, "")}${path}`;
+const pendingBindCodes = new Map();
+const PENDING_BIND_CODE_TTL_MS = 10 * 60 * 1000;
+
+const pendingBindKey = ({ chatId, from }) => `${String(chatId || "")}:${String(from?.id || "")}`;
+
+const rememberPendingBindCode = ({ chatId, from, code }) => {
+  pendingBindCodes.set(pendingBindKey({ chatId, from }), {
+    code: String(code || "").trim(),
+    expiresAt: Date.now() + PENDING_BIND_CODE_TTL_MS,
+  });
 };
 
-const mainKeyboard = () => ({
-  inline_keyboard: [
-    [{ text: "Мої замовлення", callback_data: "nav:orders" }],
-    [{ text: "Моя знижка", callback_data: "nav:discount" }],
-    [{ text: "Обране", callback_data: "nav:favorites" }],
-    [{ text: "Налаштування сповіщень", callback_data: "nav:notifications" }],
-    ...(siteUrl() ? [[{ text: "Відкрити сайт", url: siteUrl() }]] : []),
-  ],
-});
+const takePendingBindCode = ({ chatId, from }) => {
+  const key = pendingBindKey({ chatId, from });
+  const entry = pendingBindCodes.get(key);
+  if (!entry) return "";
+  if (entry.expiresAt <= Date.now()) {
+    pendingBindCodes.delete(key);
+    return "";
+  }
+  pendingBindCodes.delete(key);
+  return entry.code;
+};
+
+const siteUrl = (path = "") => {
+  if (!telegramEnv.websiteBaseUrl) return "";
+  try {
+    const url = new URL(path, telegramEnv.websiteBaseUrl.replace(/\/+$/, "/"));
+    if (!["http:", "https:"].includes(url.protocol)) return "";
+    if (["localhost", "127.0.0.1", "::1"].includes(url.hostname)) return "";
+    return url.toString();
+  } catch {
+    return "";
+  }
+};
+
+const siteButton = (text, path = "") => {
+  const url = siteUrl(path);
+  return url ? { text, url } : null;
+};
+
+const rows = (source = []) =>
+  source.map((row) => row.filter(Boolean)).filter((row) => row.length);
+
+const inlineKeyboard = (source = []) => {
+  const inline_keyboard = rows(source);
+  return inline_keyboard.length ? { inline_keyboard } : undefined;
+};
+
+const formatMoney = (value) => {
+  const amount = Number(value || 0);
+  if (!Number.isFinite(amount)) return "0 ₴";
+  return new Intl.NumberFormat("uk-UA", {
+    style: "currency",
+    currency: "UAH",
+    maximumFractionDigits: amount % 1 === 0 ? 0 : 2,
+  }).format(amount);
+};
+
+const formatDate = (value) => {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return "";
+  return new Date(timestamp).toLocaleDateString("uk-UA");
+};
+
+export const TELEGRAM_BOT_COMMANDS = [
+  { command: "menu", description: "Відкрити меню" },
+  { command: "profile", description: "Профіль" },
+  { command: "orders", description: "Останні замовлення" },
+  { command: "discount", description: "Знижка і бонуси" },
+  { command: "favorites", description: "Обране" },
+  { command: "addresses", description: "Адреси доставки" },
+  { command: "notifications", description: "Сповіщення" },
+  { command: "site", description: "Сайт і кабінет" },
+  { command: "support", description: "Підтримка" },
+  { command: "help", description: "Допомога" },
+];
+
+const mainKeyboard = () =>
+  inlineKeyboard([
+    [
+      { text: "👤 Профіль", callback_data: "nav:profile" },
+      { text: "📦 Замовлення", callback_data: "nav:orders" },
+    ],
+    [
+      { text: "💳 Знижка", callback_data: "nav:discount" },
+      { text: "⭐ Обране", callback_data: "nav:favorites" },
+    ],
+    [
+      { text: "📍 Адреси", callback_data: "nav:addresses" },
+      { text: "🔔 Сповіщення", callback_data: "nav:notifications" },
+    ],
+    [
+      { text: "🛟 Підтримка", callback_data: "nav:support" },
+      siteButton("🌐 Сайт", "/"),
+    ],
+  ]);
 
 const authKeyboard = () => ({
-  inline_keyboard: [
-    ...(siteUrl("/profile") ? [[{ text: "Відкрити сайт", url: siteUrl("/profile") }]] : []),
+  keyboard: [
+    [
+      {
+        text: "📱 Поділитися номером",
+        request_contact: true,
+      },
+    ],
   ],
+  resize_keyboard: true,
+  one_time_keyboard: true,
 });
+
+const removeKeyboard = () => ({ remove_keyboard: true });
+
+const sendBindSuccess = async ({ chatId }) => {
+  await sendTelegramMessage({
+    chatId,
+    text: "Telegram успішно підключено до акаунта.",
+    replyMarkup: removeKeyboard(),
+  });
+
+  return sendTelegramMessage({
+    chatId,
+    text: "Тепер ви можете отримувати сповіщення і користуватися кабінетом у боті.",
+    replyMarkup: mainKeyboard(),
+  });
+};
+
+const openSiteKeyboard = () =>
+  inlineKeyboard([
+    [siteButton("👤 Кабінет", "/account"), siteButton("🛒 Кошик", "/shopping-cart")],
+    [siteButton("📦 Мої замовлення", "/account?tab=orders"), siteButton("💳 Бонуси", "/account?tab=loyalty")],
+    [siteButton("⭐ Wishlist", "/account?tab=wishlist"), siteButton("📍 Адреси", "/account?tab=addresses")],
+    [siteButton("🌐 Головна", "/")],
+  ]);
 
 const requireBinding = async (from, chatId) => {
   const binding = await getActiveBindingByTelegramUserId(from?.id);
@@ -46,7 +161,7 @@ const requireBinding = async (from, chatId) => {
     await sendTelegramMessage({
       chatId,
       text:
-        "Telegram ще не підключено до акаунта.\n\nЗайдіть у профіль на сайті, натисніть “Підключити Telegram” і надішліть сюди код привʼязки.",
+        "Telegram ще не підключено до акаунта.\n\nНатисніть “📱 Поділитися номером”, щоб привʼязати цей Telegram.",
       replyMarkup: authKeyboard(),
     });
     return null;
@@ -57,27 +172,128 @@ const requireBinding = async (from, chatId) => {
 const renderFallbackUnavailable = (section) =>
   `${section} зараз недоступний у боті. Спробуйте відкрити сайт.`;
 
-const sendStart = async ({ chatId, from, text }) => {
-  const startArg = String(text || "").split(/\s+/)[1] || "";
-  if (startArg) {
-    return sendBindCode({ chatId, from, code: startArg });
-  }
-
+const sendMenu = async ({ chatId, from }) => {
   const binding = await getActiveBindingByTelegramUserId(from?.id);
   if (!binding) {
     return sendTelegramMessage({
       chatId,
       text:
-        "Вітаю. Я бот меблевого магазину.\n\nЩоб підключити Telegram, відкрийте профіль на сайті, натисніть “Підключити Telegram” і надішліть сюди код.",
+        "Вітаю. Я бот меблевого магазину.\n\nЩоб підключити Telegram до акаунта, відкрийте профіль на сайті, натисніть “Підключити Telegram”, потім тут натисніть Start і поділіться номером.",
       replyMarkup: authKeyboard(),
     });
   }
 
   return sendTelegramMessage({
     chatId,
-    text: `Telegram підключено до акаунта${binding.userPreview?.name ? `: ${html(binding.userPreview.name)}` : ""}.`,
+    text: [
+      `<b>Меню MebliHub</b>`,
+      binding.userPreview?.name ? `Акаунт: ${html(binding.userPreview.name)}` : "",
+      "Оберіть дію нижче.",
+    ]
+      .filter(Boolean)
+      .join("\n"),
     replyMarkup: mainKeyboard(),
   });
+};
+
+const sendStart = async ({ chatId, from, text }) => {
+  const startArg = String(text || "").split(/\s+/)[1] || "";
+  if (startArg) {
+    return requestContactForBindCode({ chatId, from, code: startArg });
+  }
+
+  return sendMenu({ chatId, from });
+};
+
+const requestContactForBindCode = async ({ chatId, from, code }) => {
+  try {
+    await prepareBindCodeConfirmation({
+      code,
+      from,
+      chat: { id: chatId },
+    });
+    rememberPendingBindCode({ chatId, from, code });
+    return sendTelegramMessage({
+      chatId,
+      text:
+        "Заявку з сайту знайдено.\n\nНатисніть “📱 Поділитися номером”, щоб підтвердити цей Telegram. До акаунта буде привʼязано номер, який ви надішлете з Telegram.",
+      replyMarkup: authKeyboard(),
+    });
+  } catch (error) {
+    const messages = {
+      BIND_CODE_NOT_FOUND: "Код не знайдено. Відкрийте нове посилання з профілю на сайті.",
+      BIND_CODE_EXPIRED: "Код прострочений. Створіть новий запит у профілі на сайті.",
+      INVALID_BIND_CODE: "Некоректне посилання. Створіть новий запит у профілі на сайті.",
+    };
+    return sendTelegramMessage({
+      chatId,
+      text: messages[error.code] || "Не вдалося перевірити посилання. Створіть новий запит у профілі на сайті.",
+      replyMarkup: authKeyboard(),
+    });
+  }
+};
+
+const sendBindContact = async ({ chatId, from, contact }) => {
+  const contactUserId = String(contact?.user_id || "");
+  if (!contactUserId || contactUserId !== String(from?.id || "")) {
+    return sendTelegramMessage({
+      chatId,
+      text: "Потрібен саме ваш Telegram-контакт. Натисніть “📱 Поділитися номером” у кнопці нижче.",
+      replyMarkup: authKeyboard(),
+    });
+  }
+
+  const pendingCode = takePendingBindCode({ chatId, from });
+  if (pendingCode) {
+    try {
+      await confirmBindCodeWithContact({
+        code: pendingCode,
+        phone: contact.phone_number,
+        from,
+        chat: { id: chatId },
+      });
+      return sendBindSuccess({ chatId });
+    } catch (error) {
+      const messages = {
+        BIND_CODE_NOT_FOUND: "Код не знайдено. Відкрийте нове посилання з профілю на сайті.",
+        BIND_CODE_EXPIRED: "Код прострочений. Створіть новий запит у профілі на сайті.",
+        TELEGRAM_ALREADY_BOUND: "Цей Telegram уже привʼязаний до іншого акаунта.",
+        WEBSITE_USER_ALREADY_BOUND: "Цей акаунт уже має привʼязаний інший Telegram.",
+        PHONE_ALREADY_USED: "Цей номер уже використовується в іншому акаунті на сайті.",
+        WEBSITE_PHONE_UPDATE_FAILED: "Не вдалося оновити номер у профілі на сайті. Спробуйте ще раз.",
+        WEBSITE_API_UNAVAILABLE: "Зараз не можу оновити номер на сайті. Спробуйте ще раз пізніше.",
+        TOO_MANY_CODE_ATTEMPTS: "Забагато спроб. Створіть новий запит у профілі на сайті.",
+      };
+      return sendTelegramMessage({
+        chatId,
+        text: messages[error.code] || "Не вдалося підключити Telegram. Створіть новий запит у профілі на сайті.",
+        replyMarkup: authKeyboard(),
+      });
+    }
+  }
+
+  try {
+    await confirmBindByPhoneContact({
+      phone: contact.phone_number,
+      from,
+      chat: { id: chatId },
+    });
+    return sendBindSuccess({ chatId });
+  } catch (error) {
+    const messages = {
+      TELEGRAM_PHONE_NOT_FOUND:
+        "Не знайшов акаунт із таким телефоном. Перевірте номер у профілі на сайті або увійдіть на сайт і натисніть “Підключити Telegram”.",
+      WEBSITE_API_UNAVAILABLE:
+        "Зараз не можу перевірити номер на сайті. Спробуйте ще раз пізніше.",
+      TELEGRAM_ALREADY_BOUND: "Цей Telegram уже привʼязаний до іншого акаунта.",
+      WEBSITE_USER_ALREADY_BOUND: "Цей акаунт уже має привʼязаний інший Telegram.",
+    };
+    return sendTelegramMessage({
+      chatId,
+      text: messages[error.code] || "Не вдалося підключити Telegram за номером. Спробуйте ще раз.",
+      replyMarkup: authKeyboard(),
+    });
+  }
 };
 
 const sendHelp = ({ chatId }) =>
@@ -86,44 +302,19 @@ const sendHelp = ({ chatId }) =>
     text: [
       "<b>Команди</b>",
       "/start - старт і перевірка привʼязки",
+      "/menu - головне меню",
       "/profile - коротка інформація профілю",
       "/orders - останні замовлення",
       "/discount - дисконтна картка",
       "/favorites - обране",
+      "/addresses - адреси доставки",
       "/notifications - налаштування сповіщень",
+      "/site - посилання на сайт і кабінет",
+      "/support - підтримка",
       "/login - як підтвердити вхід на сайт",
       "/unlink - відвʼязати Telegram",
     ].join("\n"),
-    replyMarkup: mainKeyboard(),
   });
-
-const sendBindCode = async ({ chatId, from, code }) => {
-  try {
-    await confirmBindCode({
-      code,
-      from,
-      chat: { id: chatId },
-    });
-    return sendTelegramMessage({
-      chatId,
-      text: "Telegram успішно підключено до акаунта. Тепер ви можете отримувати сповіщення і користуватися кабінетом у боті.",
-      replyMarkup: mainKeyboard(),
-    });
-  } catch (error) {
-    const messages = {
-      BIND_CODE_NOT_FOUND: "Код не знайдено. Перевірте код або створіть новий у профілі на сайті.",
-      BIND_CODE_EXPIRED: "Код прострочений. Створіть новий код у профілі на сайті.",
-      TELEGRAM_ALREADY_BOUND: "Цей Telegram уже привʼязаний до іншого акаунта.",
-      WEBSITE_USER_ALREADY_BOUND: "Цей акаунт уже має привʼязаний інший Telegram.",
-      TOO_MANY_CODE_ATTEMPTS: "Забагато спроб. Створіть новий код у профілі на сайті.",
-    };
-    return sendTelegramMessage({
-      chatId,
-      text: messages[error.code] || "Не вдалося підтвердити код. Спробуйте ще раз.",
-      replyMarkup: authKeyboard(),
-    });
-  }
-};
 
 const sendProfile = async ({ chatId, from }) => {
   const binding = await requireBinding(from, chatId);
@@ -141,7 +332,6 @@ const sendProfile = async ({ chatId, from }) => {
       ]
         .filter(Boolean)
         .join("\n") || renderFallbackUnavailable("Профіль"),
-      replyMarkup: mainKeyboard(),
     });
   }
 
@@ -154,10 +344,11 @@ const sendProfile = async ({ chatId, from }) => {
       profile.email ? `Email: ${html(profile.email)}` : "",
       profile.phone ? `Телефон: ${html(profile.phone)}` : "",
       profile.discountPercent ? `Знижка: ${html(profile.discountPercent)}%` : "",
+      profile.cardNumber ? `Картка: ${html(profile.cardNumber)}` : "",
     ]
       .filter(Boolean)
       .join("\n"),
-    replyMarkup: mainKeyboard(),
+    replyMarkup: inlineKeyboard([[siteButton("Відкрити кабінет", "/account")]]),
   });
 };
 
@@ -171,7 +362,6 @@ const sendOrders = async ({ chatId, from }) => {
     return sendTelegramMessage({
       chatId,
       text: response.ok ? "Останніх замовлень поки немає." : renderFallbackUnavailable("Замовлення"),
-      replyMarkup: mainKeyboard(),
     });
   }
 
@@ -181,8 +371,8 @@ const sendOrders = async ({ chatId, from }) => {
       [
         `<b>Замовлення ${html(order.number || order.id || "")}</b>`,
         order.status ? `Статус: ${html(order.status)}` : "",
-        order.createdAt ? `Дата: ${html(new Date(order.createdAt).toLocaleDateString("uk-UA"))}` : "",
-        order.total ? `Сума: ${html(order.total)}` : "",
+        order.createdAt ? `Дата: ${html(formatDate(order.createdAt))}` : "",
+        order.total !== undefined ? `Сума: ${html(formatMoney(order.total))}` : "",
         Array.isArray(order.items) && order.items.length
           ? `Склад: ${html(order.items.map((item) => item.name || item.title).filter(Boolean).slice(0, 3).join(", "))}`
           : "",
@@ -192,7 +382,11 @@ const sendOrders = async ({ chatId, from }) => {
     )
     .join("\n\n");
 
-  return sendTelegramMessage({ chatId, text, replyMarkup: mainKeyboard() });
+  return sendTelegramMessage({
+    chatId,
+    text,
+    replyMarkup: inlineKeyboard([[siteButton("Відкрити всі замовлення", "/account?tab=orders")]]),
+  });
 };
 
 const sendDiscount = async ({ chatId, from }) => {
@@ -205,7 +399,6 @@ const sendDiscount = async ({ chatId, from }) => {
     return sendTelegramMessage({
       chatId,
       text: renderFallbackUnavailable("Дисконтна картка"),
-      replyMarkup: mainKeyboard(),
     });
   }
 
@@ -215,12 +408,14 @@ const sendDiscount = async ({ chatId, from }) => {
       "<b>Дисконтна картка</b>",
       discount.cardNumber ? `Номер: ${html(discount.cardNumber)}` : "",
       discount.percent !== undefined ? `Знижка: ${html(discount.percent)}%` : "",
+      discount.tier ? `Рівень: ${html(discount.tier)}` : "",
+      discount.bonusBalance !== undefined ? `Бонуси: ${html(discount.bonusBalance)}` : "",
       discount.history?.length ? `Останнє використання: ${html(discount.history[0].date || "")}` : "",
       discount.qrUrl ? "QR доступний у веб-версії кабінету." : "",
     ]
       .filter(Boolean)
       .join("\n") || "Дисконтна картка ще не активна.",
-    replyMarkup: mainKeyboard(),
+    replyMarkup: inlineKeyboard([[siteButton("Відкрити бонуси", "/account?tab=loyalty")]]),
   });
 };
 
@@ -234,7 +429,6 @@ const sendFavorites = async ({ chatId, from }) => {
     return sendTelegramMessage({
       chatId,
       text: response.ok ? "В обраному поки немає товарів." : renderFallbackUnavailable("Обране"),
-      replyMarkup: mainKeyboard(),
     });
   }
 
@@ -246,12 +440,43 @@ const sendFavorites = async ({ chatId, from }) => {
   return sendTelegramMessage({
     chatId,
     text: `<b>Обране</b>\n${text}`,
-    replyMarkup: {
-      inline_keyboard: [
-        ...(favorites[0]?.url ? [[{ text: "Відкрити товар", url: favorites[0].url }]] : []),
-        ...mainKeyboard().inline_keyboard,
-      ],
-    },
+    replyMarkup: inlineKeyboard([[siteButton("Відкрити wishlist", "/account?tab=wishlist")]]),
+  });
+};
+
+const sendAddresses = async ({ chatId, from }) => {
+  const binding = await requireBinding(from, chatId);
+  if (!binding) return;
+
+  const response = await webAppClient.getAddresses(binding.websiteUserId);
+  const addresses = response.data?.addresses || response.data?.items || [];
+  if (!response.ok || !addresses.length) {
+    return sendTelegramMessage({
+      chatId,
+      text: response.ok ? "Адрес доставки поки немає." : renderFallbackUnavailable("Адреси доставки"),
+      replyMarkup: inlineKeyboard([[siteButton("Керувати адресами", "/account?tab=addresses")]]),
+    });
+  }
+
+  const text = addresses
+    .slice(0, 5)
+    .map((address, index) =>
+      [
+        `${index + 1}. ${address.isPrimary ? "<b>Основна адреса</b>" : "<b>Адреса</b>"}`,
+        address.label ? `Назва: ${html(address.label)}` : "",
+        address.city ? `Місто: ${html(address.city)}` : "",
+        address.addressLine ? `Адреса: ${html(address.addressLine)}` : "",
+        address.comment ? `Коментар: ${html(address.comment)}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n")
+    )
+    .join("\n\n");
+
+  return sendTelegramMessage({
+    chatId,
+    text: `<b>Адреси доставки</b>\n${text}`,
+    replyMarkup: inlineKeyboard([[siteButton("Керувати адресами", "/account?tab=addresses")]]),
   });
 };
 
@@ -273,17 +498,40 @@ const sendNotifications = async ({ chatId, from }) => {
   const prefs = binding.notificationPreferences || {};
   return sendTelegramMessage({
     chatId,
-    text: "<b>Налаштування сповіщень</b>",
+    text: "<b>🔔 Налаштування сповіщень</b>",
     replyMarkup: {
-      inline_keyboard: Object.entries(preferenceLabels).map(([key, label]) => [
-        {
-          text: `${prefs[key] === false ? "Вимкнено" : "Увімкнено"} - ${label}`,
-          callback_data: `pref_toggle:${key}`,
-        },
-      ]),
+      inline_keyboard: [
+        ...Object.entries(preferenceLabels).map(([key, label]) => [
+          {
+            text: `${prefs[key] === false ? "🔕 Вимкнено" : "✅ Увімкнено"} · ${label}`,
+            callback_data: `pref_toggle:${key}`,
+          },
+        ]),
+        [{ text: "⬅️ Меню", callback_data: "nav:menu" }],
+      ],
     },
   });
 };
+
+const sendSiteLinks = ({ chatId }) =>
+  sendTelegramMessage({
+    chatId,
+    text: siteUrl()
+      ? "Швидкі посилання на сайт і особистий кабінет."
+      : "Посилання на сайт недоступні, бо WEBSITE_BASE_URL зараз не налаштований для публічного домену.",
+    replyMarkup: openSiteKeyboard(),
+  });
+
+const sendSupport = ({ chatId }) =>
+  sendTelegramMessage({
+    chatId,
+    text:
+      "Підтримка доступна на сайті через чат. Відкрийте сайт і натисніть кнопку чату внизу сторінки.\n\nТакож можете переглянути контакти магазину.",
+    replyMarkup: inlineKeyboard([
+      [siteButton("Відкрити сайт", "/"), siteButton("Контакти", "/contacts")],
+      [siteButton("Особистий кабінет", "/account")],
+    ]),
+  });
 
 const sendLoginHelp = async ({ chatId, from }) => {
   const binding = await requireBinding(from, chatId);
@@ -293,7 +541,6 @@ const sendLoginHelp = async ({ chatId, from }) => {
     chatId,
     text:
       "Щоб увійти через Telegram, виберіть на сайті “Увійти через код у Telegram”. Тут зʼявиться кнопка “Підтвердити вхід”.",
-    replyMarkup: mainKeyboard(),
   });
 };
 
@@ -312,34 +559,61 @@ const sendUnlink = async ({ chatId, from }) => {
 const commandHandlers = {
   "/start": sendStart,
   "/help": sendHelp,
+  "/menu": sendMenu,
   "/profile": sendProfile,
   "/orders": sendOrders,
   "/discount": sendDiscount,
+  "/bonus": sendDiscount,
   "/favorites": sendFavorites,
+  "/addresses": sendAddresses,
   "/notifications": sendNotifications,
+  "/site": sendSiteLinks,
+  "/support": sendSupport,
   "/login": sendLoginHelp,
   "/unlink": sendUnlink,
 };
+
+const textAliases = [
+  [/^(меню|menu)$/i, "/menu"],
+  [/^(профіль|profile|кабінет)$/i, "/profile"],
+  [/^(замовлення|orders)$/i, "/orders"],
+  [/^(знижка|бонуси|discount|bonus)$/i, "/discount"],
+  [/^(обране|wishlist|favorites)$/i, "/favorites"],
+  [/^(адреси|addresses)$/i, "/addresses"],
+  [/^(сповіщення|notifications)$/i, "/notifications"],
+  [/^(сайт|site)$/i, "/site"],
+  [/^(підтримка|support)$/i, "/support"],
+];
 
 const handleMessage = async (message) => {
   const text = String(message?.text || "").trim();
   const chatId = String(message?.chat?.id || "");
   const from = message?.from || {};
-  if (!text || !chatId) return;
+  if (!chatId) return;
+
+  if (message?.contact) {
+    return sendBindContact({ chatId, from, contact: message.contact });
+  }
+
+  if (!text) return;
 
   const command = text.startsWith("/") ? text.split(/\s+/)[0].split("@")[0] : "";
   if (command && commandHandlers[command]) {
     return commandHandlers[command]({ chatId, from, text });
   }
 
+  const alias = textAliases.find(([pattern]) => pattern.test(text));
+  if (alias) {
+    return commandHandlers[alias[1]]({ chatId, from, text });
+  }
+
   if (/^\d{4,8}$/.test(text)) {
-    return sendBindCode({ chatId, from, code: text });
+    return requestContactForBindCode({ chatId, from, code: text });
   }
 
   return sendTelegramMessage({
     chatId,
     text: "Не розумію команду. Натисніть /help, щоб побачити можливості.",
-    replyMarkup: mainKeyboard(),
   });
 };
 
@@ -351,10 +625,15 @@ const handleCallbackQuery = async (callbackQuery) => {
   if (data.startsWith("nav:")) {
     await answerTelegramCallback({ callbackQueryId: callbackQuery.id });
     const section = data.slice(4);
+    if (section === "menu") return sendMenu({ chatId, from });
+    if (section === "profile") return sendProfile({ chatId, from });
     if (section === "orders") return sendOrders({ chatId, from });
     if (section === "discount") return sendDiscount({ chatId, from });
     if (section === "favorites") return sendFavorites({ chatId, from });
+    if (section === "addresses") return sendAddresses({ chatId, from });
     if (section === "notifications") return sendNotifications({ chatId, from });
+    if (section === "support") return sendSupport({ chatId, from });
+    if (section === "site") return sendSiteLinks({ chatId });
   }
 
   if (data.startsWith("login_confirm:") || data.startsWith("recovery_confirm:")) {
@@ -384,7 +663,7 @@ const handleCallbackQuery = async (callbackQuery) => {
         text: error.code === "REQUEST_EXPIRED" ? "Запит прострочений" : "Не вдалося підтвердити",
         showAlert: true,
       });
-      throw error;
+      return null;
     }
   }
 
@@ -423,8 +702,7 @@ export const handleTelegramUpdate = async (update) => {
     if (chatId) {
       await sendTelegramMessage({
         chatId,
-        text: "Сталася помилка. Спробуйте ще раз або відкрийте сайт.",
-        replyMarkup: mainKeyboard(),
+        text: "Сталася помилка. Спробуйте ще раз або відкрийте меню команд.",
       }).catch(() => null);
     }
     await writeAuditLog({
@@ -434,7 +712,8 @@ export const handleTelegramUpdate = async (update) => {
       ok: false,
       reason: error.message,
     });
-    if (error?.status) throw error;
-    throw createHttpError(500, "Telegram update handling failed", "BOT_UPDATE_FAILED");
+    return { ok: false, code: error?.code || "BOT_UPDATE_FAILED" };
   }
+
+  return { ok: true, skipped: true };
 };
