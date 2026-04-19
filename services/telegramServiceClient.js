@@ -75,4 +75,19 @@ export const telegramServiceClient = {
       method: "PATCH",
       body: { telegramUserId, preferences },
     }),
+
+  createLoginRequest: ({ websiteUserId, metadata }) =>
+    requestTelegramService("/login-requests", {
+      method: "POST",
+      body: { websiteUserId, metadata },
+    }),
+
+  getLoginRequest: ({ requestId, requestToken }) =>
+    requestTelegramService(`/login-requests/${encodeURIComponent(requestId)}`, { requestToken }),
+
+  redeemLoginRequest: ({ requestId, requestToken }) =>
+    requestTelegramService(`/login-requests/${encodeURIComponent(requestId)}/redeem`, {
+      method: "POST",
+      requestToken,
+    }),
 };
